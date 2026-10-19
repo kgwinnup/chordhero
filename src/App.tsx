@@ -5,6 +5,8 @@ import { JudgmentPopup, Results, ScoreHud } from './components/Hud'
 import { MicGate } from './components/MicGate'
 import { SettingsSheet } from './components/SettingsSheet'
 import { PresetEditor } from './components/PresetEditor'
+import { DetectorLab } from './components/DetectorLab'
+import { TuneView } from './components/TuneView'
 import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, saveCustomPresets, toSeq } from './game/presets'
 import { newKey, type Settings, useGame } from './game/useGame'
 import { CHORDS_BY_ID } from './music/chords'
@@ -157,6 +159,8 @@ export default function App() {
 
   const gateOpen = !settings.testMode && !(mic === 'on' && micReady)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [labOpen, setLabOpen] = useState(false)
+  const [screen, setScreen] = useState<'play' | 'tune'>('play')
   const changeDevice = (id: string) => {
     setDeviceId(id)
     enableMic(id)
@@ -171,44 +175,46 @@ export default function App() {
           </span>
           ChordHero
         </h1>
-        <div className="preset-picker">
-          <select
-            aria-label="Song preset"
-            value={preset.id}
-            disabled={running}
-            onChange={(e) => {
-              if (e.target.value === '__new') setEditing({ preset: null })
-              else choosePreset(e.target.value)
-            }}
-          >
-            <optgroup label="Songs">
-              {BUILT_IN_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </optgroup>
-            {customPresets.length > 0 && (
-              <optgroup label="My presets">
-                {customPresets.map((p) => (
+        {screen === 'play' && (
+          <div className="preset-picker">
+            <select
+              aria-label="Song preset"
+              value={preset.id}
+              disabled={running}
+              onChange={(e) => {
+                if (e.target.value === '__new') setEditing({ preset: null })
+                else choosePreset(e.target.value)
+              }}
+            >
+              <optgroup label="Songs">
+                {BUILT_IN_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </optgroup>
-            )}
-            <option value="__new">＋ Build your own…</option>
-          </select>
-          <button
-            className="icon"
-            aria-label={preset.builtIn ? 'Customize this preset' : 'Edit this preset'}
-            title={preset.builtIn ? 'Customize' : 'Edit'}
-            disabled={running}
-            onClick={() => setEditing({ preset })}
-          >
-            ✎
-          </button>
-        </div>
+              {customPresets.length > 0 && (
+                <optgroup label="My presets">
+                  {customPresets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <option value="__new">＋ Build your own…</option>
+            </select>
+            <button
+              className="icon"
+              aria-label={preset.builtIn ? 'Customize this preset' : 'Edit this preset'}
+              title={preset.builtIn ? 'Customize' : 'Edit'}
+              disabled={running}
+              onClick={() => setEditing({ preset })}
+            >
+              ✎
+            </button>
+          </div>
+        )}
         <div className="row">
           {mic === 'on' ? (
             <button
@@ -225,9 +231,19 @@ export default function App() {
             </button>
           ) : (
             <button className="primary" onClick={() => enableMic()} disabled={running}>
-              🎤 {settings.testMode ? 'Use mic' : 'Enable mic'}
+              🎤 <span className="wide-only">{settings.testMode ? 'Use ' : 'Enable '}</span>mic
             </button>
           )}
+          <button
+            className={screen === 'tune' ? 'tune-btn on' : 'tune-btn'}
+            onClick={() => {
+              if (screen === 'tune') return setScreen('play')
+              stop()
+              setScreen('tune')
+            }}
+          >
+            Tune
+          </button>
           <button className="icon settings-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
             ⚙
           </button>
@@ -262,58 +278,82 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           engine={engine}
           micOn={mic === 'on'}
+          onOpenLab={() => {
+            setSettingsOpen(false)
+            setPreview(preview ?? seq[0]?.chordId ?? 'G')
+            setLabOpen(true)
+          }}
+        />
+      )}
+      {labOpen && (
+        <DetectorLab
+          engine={engine}
+          currentStrings={ui.strings}
+          chordId={ui.target?.id ?? preview ?? 'G'}
+          onChord={setPreview}
+          micOn={mic === 'on'}
+          onClose={() => {
+            setLabOpen(false)
+            setPreview(null)
+          }}
         />
       )}
 
-      <ScoreHud score={score} />
+      {screen === 'tune' ? (
+        <TuneView engine={engine} micOn={mic === 'on'} onEnableMic={() => enableMic()} onBack={() => setScreen('play')} />
+      ) : (
+        <>
+          <ScoreHud score={score} />
 
-      <section className={`stage heat-${score.multiplier}`}>
-        <Neck layout={layout} view={view} loop={settings.loop} />
-        {ui.countdown !== null && (
-          <div className="countdown" key={ui.countdown}>
-            {ui.countdown}
-          </div>
-        )}
-        {running && <JudgmentPopup judgment={score.last} />}
-      </section>
+          <section className={`stage heat-${score.multiplier}`}>
+            <Neck layout={layout} view={view} loop={settings.loop} />
+            {ui.countdown !== null && (
+              <div className="countdown" key={ui.countdown}>
+                {ui.countdown}
+              </div>
+            )}
+            {running && <JudgmentPopup judgment={score.last} />}
+          </section>
 
 
-      <section className="panel transport">
-        <button className={`play ${running ? 'stop' : ''}`} disabled={!layout.items.length} onClick={() => {
-            if (running) {
-              stop()
-              showResults()
-            } else {
-              setResults(null)
-              start()
-            }
-          }}>
-          {running ? '■ Stop' : '▶ Play'}
-        </button>
+          <section className="panel transport">
+            <button className={`play ${running ? 'stop' : ''}`} disabled={!layout.items.length} onClick={() => {
+                if (running) {
+                  stop()
+                  showResults()
+                } else {
+                  setResults(null)
+                  start()
+                }
+              }}>
+              {running ? '■ Stop' : '▶ Play'}
+            </button>
 
-        <div className="tempo">
-          <button className="icon" aria-label="Slower" onClick={() => set('bpm', Math.max(30, settings.bpm - 5))}>
-            −
-          </button>
-          <label>
-            <span className="bpm">
-              <b>{settings.bpm}</b> BPM
-            </span>
-            <input
-              type="range"
-              min={30}
-              max={200}
-              value={settings.bpm}
-              onChange={(e) => set('bpm', Number(e.target.value))}
-              aria-label="Tempo"
-            />
-          </label>
-          <button className="icon" aria-label="Faster" onClick={() => set('bpm', Math.min(200, settings.bpm + 5))}>
-            +
-          </button>
-        </div>
+            <div className="tempo">
+              <button className="icon" aria-label="Slower" onClick={() => set('bpm', Math.max(30, settings.bpm - 5))}>
+                −
+              </button>
+              <label>
+                <span className="bpm">
+                  <b>{settings.bpm}</b> BPM
+                </span>
+                <input
+                  type="range"
+                  min={30}
+                  max={200}
+                  value={settings.bpm}
+                  onChange={(e) => set('bpm', Number(e.target.value))}
+                  aria-label="Tempo"
+                />
+              </label>
+              <button className="icon" aria-label="Faster" onClick={() => set('bpm', Math.min(200, settings.bpm + 5))}>
+                +
+              </button>
+            </div>
 
-      </section>
+          </section>
+        </>
+      )}
 
 
 

@@ -13,9 +13,10 @@ interface Props {
   onClose: () => void
   engine: AudioEngine
   micOn: boolean
+  onOpenLab: () => void
 }
 
-export function SettingsSheet({ settings, set, running, onDemo, devices, deviceId, onDevice, onClose, engine, micOn }: Props) {
+export function SettingsSheet({ settings, set, running, onDemo, devices, deviceId, onDevice, onClose, engine, micOn, onOpenLab }: Props) {
   return (
     <div className="results-backdrop sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -60,6 +61,14 @@ export function SettingsSheet({ settings, set, running, onDemo, devices, deviceI
           )}
           {micOn && <MicCheck engine={engine} />}
           <Toggle label="Demo mode" hint="No guitar: the app strums for you" checked={settings.testMode} onChange={onDemo} disabled={running} />
+        </div>
+
+        <div className="sheet-group">
+          <span className="sheet-label">Experimental</span>
+          <button onClick={onOpenLab} disabled={running}>
+            Detector lab
+          </button>
+          <p className="sheet-hint">Compare string detection with a neural network (downloads ~2 MB).</p>
         </div>
 
         <button className="primary big sheet-done" onClick={onClose}>

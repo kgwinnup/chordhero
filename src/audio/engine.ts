@@ -1,5 +1,8 @@
-import { type Chord, midiToFreq, NOTE_NAMES, stringMidi } from '../music/chords'
+import { type Chord, midiToFreq, stringMidi } from '../music/chords'
 import { chromaMatch, isNoiseLike, scoreStrings } from './detect'
+import { type Pitch, type PitchRange, yinPitch } from './pitch'
+
+export type { Pitch } from './pitch'
 
 export interface Analysis {
   /** RMS of the most recent ~40ms of input, 0..1 */
@@ -31,12 +34,6 @@ export interface MicInfo {
   noiseSuppression: boolean | null
 }
 
-export interface Pitch {
-  freq: number
-  note: string
-  /** How far off the nearest note, −50…50 */
-  cents: number
-}
 
 export class AudioEngine {
   private _ctx!: AudioContext
@@ -65,6 +62,11 @@ export class AudioEngine {
 
   get ctx() {
     return this._ctx
+  }
+
+  /** The node everything the detectors hear passes through (mic, and test strums). */
+  get listenInput(): AudioNode {
+    return this.input
   }
 
   private build(sampleRate?: number) {
@@ -142,44 +144,12 @@ export class AudioEngine {
 
   /**
    * The pitch of a single plucked string, from the latest input (call after `analyze`).
-   * Uses YIN on the waveform: unlike picking the loudest spectral peak, it isn't fooled
-   * into octave errors by a guitar's strong overtones. Null when it's quiet or unclear.
+   * Null when it's quiet or unclear. See `yinPitch`.
    */
-  pitch(): Pitch | null {
-    const sr = this.ctx.sampleRate
-    const W = 2048
-    const x = this.timeData.subarray(this.timeData.length - W * 2)
-    let energy = 0
-    for (let i = W; i < W * 2; i++) energy += x[i] * x[i]
-    if (Math.sqrt(energy / W) < 0.003) return null
-
-    const minTau = Math.floor(sr / 1100)
-    const maxTau = Math.min(W - 1, Math.ceil(sr / 70))
-    // Cumulative-mean-normalised difference function.
-    const d = new Float32Array(maxTau + 1)
-    let running = 0
-    let tau = -1
-    for (let t = 1; t <= maxTau; t++) {
-      let sum = 0
-      for (let i = 0; i < W; i++) {
-        const diff = x[i] - x[i + t]
-        sum += diff * diff
-      }
-      running += sum
-      d[t] = running ? (sum * t) / running : 1
-      if (t > minTau + 1 && d[t - 1] < 0.15 && d[t - 1] <= d[t] && d[t - 1] <= d[t - 2]) {
-        tau = t - 1
-        break
-      }
-    }
-    if (tau < 0) return null
-    const [a, m, c] = [d[tau - 1], d[tau], d[tau + 1]]
-    const shift = a + c - 2 * m === 0 ? 0 : (0.5 * (a - c)) / (a - 2 * m + c)
-    const freq = sr / (tau + shift)
-    const midi = 69 + 12 * Math.log2(freq / 440)
-    const nearest = Math.round(midi)
-    return { freq, note: `${NOTE_NAMES[((nearest % 12) + 12) % 12]}${Math.floor(nearest / 12) - 1}`, cents: Math.round((midi - nearest) * 100) }
+  pitch(range?: PitchRange): Pitch | null {
+    return yinPitch(this.timeData, this.ctx.sampleRate, range)
   }
+
 
 
   disableMic() {
@@ -221,15 +191,29 @@ export class AudioEngine {
     src.start(Math.max(when, this.ctx.currentTime))
   }
 
-  /** Karplus–Strong plucked strings, low to high with a small strum delay. */
+  /** Play one note, e.g. a tuner's reference pitch. */
+  pluck(midi: number, when = this.ctx.currentTime) {
+    const src = this.ctx.createBufferSource()
+    src.buffer = this.synthesize([midi])
+    src.connect(this.output)
+    src.start(Math.max(when, this.ctx.currentTime))
+  }
+
   private synthesizeStrum(chord: Chord, skip: number[]): AudioBuffer {
+    const notes = chord.frets.flatMap((_, s) => {
+      const m = stringMidi(chord, s)
+      return m === null || skip.includes(s) ? [] : [m]
+    })
+    return this.synthesize(notes)
+  }
+
+  /** Karplus–Strong plucked strings, in the order given with a small strum delay. */
+  private synthesize(notes: number[]): AudioBuffer {
     const sr = this.ctx.sampleRate
     const buf = this.ctx.createBuffer(1, Math.floor(sr * 3), sr)
     const out = buf.getChannelData(0)
     let k = 0
-    chord.frets.forEach((_, s) => {
-      const m = stringMidi(chord, s)
-      if (m === null || skip.includes(s)) return
+    notes.forEach((m) => {
       // The averaging filter adds half a sample of delay, so subtract it.
       const period = Math.max(2, Math.round(sr / midiToFreq(m) - 0.5))
       const ring = new Float32Array(period)
