@@ -73,6 +73,7 @@ function loadWorker(network: Record<string, string>, { online = true } = {}) {
 const SITE = {
   '': '<script type="module" src="./assets/index-abc.js"></script><link rel="stylesheet" href="./assets/index-def.css">',
   'manifest.webmanifest': '{}',
+  'keep-awake.mp4': 'video',
   'icons/icon-192.png': 'png',
   'icons/icon-512.png': 'png',
   'models/basic-pitch/model.json': '{}',
@@ -87,7 +88,7 @@ describe('service worker', () => {
     const sw = loadWorker(SITE)
     await sw.install()
     expect((await sw.cached()).sort()).toEqual(
-      ['', 'assets/index-abc.js', 'assets/index-def.css', 'icons/icon-192.png', 'icons/icon-512.png', 'manifest.webmanifest', 'models/basic-pitch/group1-shard1of1.bin', 'models/basic-pitch/model.json'].sort(),
+      ['', 'assets/index-abc.js', 'assets/index-def.css', 'icons/icon-192.png', 'icons/icon-512.png', 'keep-awake.mp4', 'manifest.webmanifest', 'models/basic-pitch/group1-shard1of1.bin', 'models/basic-pitch/model.json'].sort(),
     )
   })
 

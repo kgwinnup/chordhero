@@ -3,7 +3,7 @@
 // - Everything else on this site (hashed scripts and styles, fonts, icons, the ML model):
 //   cache first. Built files get a new name whenever they change, so a cached copy is never stale.
 const CACHE = 'chordhero-v1'
-const PRECACHE = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'models/basic-pitch/model.json', 'models/basic-pitch/group1-shard1of1.bin']
+const PRECACHE = ['./', 'manifest.webmanifest', 'keep-awake.mp4', 'icons/icon-192.png', 'icons/icon-512.png', 'models/basic-pitch/model.json', 'models/basic-pitch/group1-shard1of1.bin']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

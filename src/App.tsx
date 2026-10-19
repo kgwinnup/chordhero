@@ -10,6 +10,7 @@ import { TuneView } from './components/TuneView'
 import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, saveCustomPresets, toSeq } from './game/presets'
 import { newKey, type Settings, useGame } from './game/useGame'
 import { CHORDS_BY_ID } from './music/chords'
+import { keepAwake } from './wakeLock'
 
 const DEFAULT_SETTINGS: Settings = {
   bpm: 70,
@@ -161,6 +162,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
   const [screen, setScreen] = useState<'play' | 'tune'>('play')
+  // Your hands are on the guitar, not the phone: keep the screen on while playing or tuning.
+  useEffect(() => keepAwake(running || screen === 'tune'), [running, screen])
   const changeDevice = (id: string) => {
     setDeviceId(id)
     enableMic(id)
