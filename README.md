@@ -6,6 +6,7 @@ A Simply Guitar–style chord trainer that runs entirely in the browser. Build a
 
 - **Living fretboard.** A detailed neck (rosewood, frets, inlays, wound strings) shows exactly where your fingers go. Each string glows and shimmers when the mic hears it, and the next chord's shape ghosts in before you need it.
 - **Chord strip.** Upcoming chords slide toward you along the top. The current card shrinks as its beats pass.
+- **Honest string lights.** Strings that belong to the chord glow green when they ring. They glow bright when the whole strum sounds like the chord and dim when it doesn't, however hard you hit. A wrong chord also shows **✕ Not Am**. A muted string (✕) you hit by mistake vibrates red and costs you a string in the score.
 - **Guitar Hero–style scoring.** Every chord is graded on how many strings rang and how close to the beat you strummed (Perfect, Great, Good, OK, Miss), with combo multipliers, sparks, and a results screen with your best score.
 - **Beginner path** (**Learn** in the **Play · Learn · Tune** switch at the top). Seven units take an absolute beginner through Em, Am, E, A, D, G and C. Each chord has three stages: learn the shape, drill the changes, then play a short song. Steps unlock in order and your progress is saved.
   - **String check.** To learn a shape, you first pick each string on its own, low to high. A string counts only if its note jumps when you pick it, so a skipped or muted string can't slip through. (In a full strum, a missing string can hide behind another string's overtones.)
@@ -22,6 +23,7 @@ A Simply Guitar–style chord trainer that runs entirely in the browser. Build a
 ChordHero is an installable web app: it gets its own icon, opens full-screen, and works offline
 (after the first launch).
 
+- On a phone in the browser, ChordHero shows a tip at the bottom explaining how to install it. Dismissing the tip hides it for two weeks.
 - **iPhone / iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen**.
 - **Android:** open it in Chrome and tap **Install app** (or menu ⋮ → **Add to Home screen**).
 

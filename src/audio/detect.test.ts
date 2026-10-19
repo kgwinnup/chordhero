@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { type Chord, chordPitchClasses, CHORDS, CHORDS_BY_ID, STRING_NAMES } from '../music/chords'
-import { chordFit, chordFrequencies, chromaMatch, isNoiseLike, noteLevels, pickRang, RIVAL_LEEWAY, scoreStrings } from './detect'
+import { chordFit, chordFrequencies, chromaMatch, isNoiseLike, mutedRinging, noteLevels, pickRang, RIVAL_LEEWAY, scoreStrings } from './detect'
 
 const SAMPLE_RATE = 48000
 const FFT_SIZE = 16384
@@ -124,6 +124,27 @@ describe.each([
   })
 })
 
+describe.each([
+  ['flat mic', FLAT],
+  ['phone mic', PHONE],
+])('muted strings hit by mistake, with a %s', (_, mic) => {
+  const OPEN = [82.41, 110, 146.83, 196, 246.94, 329.63]
+  const muted = (chord: Chord) => chord.frets.flatMap((f, s) => (f < 0 ? [s] : []))
+  const withMuted = CHORDS.filter((c) => muted(c).length)
+  const hit = (ringing: boolean[]) => ringing.flatMap((on, s) => (on ? [STRING_NAMES[s]] : []))
+
+  it.each(withMuted.map((c) => [c.name, c] as const))('%s: a clean strum hits none', (_, chord) => {
+    expect(hit(mutedRinging(spectrum(played(chord, sounding(chord)), mic), BIN_HZ, chord, THRESHOLD, true))).toEqual([])
+  })
+
+  it.each(withMuted.map((c) => [c.name, c] as const))('%s: strumming a muted string open is caught', (_, chord) => {
+    for (const s of muted(chord)) {
+      const spec = spectrum([...played(chord, sounding(chord)), OPEN[s]], mic)
+      expect(hit(mutedRinging(spec, BIN_HZ, chord, THRESHOLD, true)), `${chord.name} with open ${STRING_NAMES[s]}`).toEqual([STRING_NAMES[s]])
+    }
+  })
+})
+
 describe('strings are told apart by pitch, not position', () => {
   it('the open A lights the A string, not low E or D', () => {
     const chord = CHORDS_BY_ID['Am']
@@ -178,10 +199,12 @@ describe('telling chords apart', () => {
     const { match, rival } = chordFit(spec, BIN_HZ, chord, CHORDS)
     return match >= MIN_MATCH && match >= rival - RIVAL_LEEWAY
   }
-  const samePitches = (a: Chord, b: Chord) => {
-    const pa = chordPitchClasses(a)
-    const pb = chordPitchClasses(b)
-    return pa.size === pb.size && [...pa].every((p) => pb.has(p))
+  /** Same notes, or the target's notes plus one (Am7 for Am): chord fit lets these through on
+   * purpose, since overtones make every chord sound a little like its 7th. */
+  const twins = (target: Chord, other: Chord) => {
+    const pt = chordPitchClasses(target)
+    const po = chordPitchClasses(other)
+    return [...pt].every((p) => po.has(p)) && po.size - pt.size <= 1
   }
 
   describe.each([
@@ -197,7 +220,7 @@ describe('telling chords apart', () => {
       let passed = 0
       for (const target of CHORDS) {
         for (const wrong of CHORDS) {
-          if (samePitches(target, wrong)) continue
+          if (twins(target, wrong)) continue
           pairs++
           if (fits(target, spectrum(played(wrong, sounding(wrong)), mic, { level: -30 }))) passed++
         }

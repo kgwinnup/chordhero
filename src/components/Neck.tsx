@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { eventByAbs, type GameView, type Layout } from '../game/useGame'
 import type { Grade } from '../game/scoring'
+import type { Tone } from '../game/strumLight'
 import { type Chord, STRING_NAMES } from '../music/chords'
 
 interface Props {
@@ -51,6 +52,11 @@ const GRADE_VAR: Record<Grade, string> = {
   ok: '--ok',
   miss: '--miss',
 }
+/**
+ * Strings that rang always glow green (you hit a string of the chord); how brightly says how the
+ * strum went: dim while listening or if it wasn't the chord, full if it was, then by grade.
+ */
+const TONE_ALPHA: Record<Tone, number> = { listening: 0.5, wrong: 0.3, right: 1, perfect: 1, great: 1, good: 0.8, ok: 0.6, miss: 0.3 }
 const BURST: Record<Grade, number> = { perfect: 16, great: 11, good: 7, ok: 4, miss: 0 }
 /** The board shows the nut through a little past the 5th fret. */
 const VISIBLE_FRETS = 5.6
@@ -195,14 +201,16 @@ export function Neck({ layout, view, loop }: Props) {
 
       const chord = v.display
       const next = playing && v.targetAbs !== null ? eventByAbs(lay, v.targetAbs + 1, looping) : null
-      drawStrings(ctx, g, chord, v.ringing, t, flash, flashColor, color)
+      const lit: Lit = { ring: color('--ring'), alpha: TONE_ALPHA[v.tone ?? 'listening'], wrong: color('--wrong'), mutedHit: v.light.mutedHit }
+      drawStrings(ctx, g, chord, v.ringing, lit, t, flash, flashColor)
       if (next && next.chord.id !== chord?.id) {
         // Ghost of the next shape fades in over the last beat and a half.
         const fade = Math.max(0, Math.min(1, 1 - (next.start - v.pos) / 1.5))
-        if (fade > 0) drawShape(ctx, g, next.chord, null, fade * 0.55, true, color)
+        if (fade > 0) drawShape(ctx, g, next.chord, null, null, fade * 0.55, true, color)
       }
-      if (chord) drawShape(ctx, g, chord, v.ringing, 1, false, color)
-      drawMarkers(ctx, g, chord, v.ringing, color)
+      if (chord) drawShape(ctx, g, chord, v.ringing, lit, 1, false, color)
+      drawMarkers(ctx, g, chord, v.ringing, lit, color)
+      if (chord && v.tone === 'wrong') drawWrong(ctx, g, chord, color)
 
       rings = rings.filter((r) => (r.life += dt) < 0.4)
       for (const r of rings) {
@@ -538,19 +546,21 @@ function drawStrings(
   g: Geo,
   chord: Chord | null,
   ringing: boolean[],
+  { ring, alpha, wrong, mutedHit }: Lit,
   t: number,
   flash: number,
   flashColor: string,
-  color: (n: string) => string,
 ) {
   for (let k = 0; k < 6; k++) {
     const y = g.stringY(k)
     const thick = GAUGE[k] * Math.min(1.15, Math.max(0.75, g.gap / 40))
     const muted = !!chord && chord.frets[k] < 0
     const lit = !!chord && !muted && ringing[k]
+    // A muted string hit by mistake: it vibrates red.
+    const bad = muted && mutedHit[k]
     const from = g.nutX - 6
     const to = g.boardRight
-    const amp = lit ? Math.min(2.2, thick * 0.6) : 0
+    const amp = lit || bad ? Math.min(2.2, thick * 0.6) : 0
 
     // Shadow on the wood.
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)'
@@ -570,23 +580,33 @@ function drawStrings(
       metal.addColorStop(0.4, '#f7f8fa')
       metal.addColorStop(1, '#787c83')
     }
-    ctx.globalAlpha = muted ? 0.45 : 1
-    if (lit) {
-      ctx.shadowColor = color('--ring')
-      ctx.shadowBlur = 16
+    const wave = () => {
+      ctx.beginPath()
+      for (let x = from; x <= to; x += 4) {
+        // A standing wave between nut and the board's end.
+        const u = (x - from) / (to - from)
+        const yy = y + Math.sin(u * Math.PI) * amp * Math.sin(t / 22 + k)
+        if (x === from) ctx.moveTo(x, yy)
+        else ctx.lineTo(x, yy)
+      }
+      ctx.stroke()
     }
-    ctx.strokeStyle = lit ? color('--ring') : metal
-    ctx.lineWidth = lit ? thick + 1 : thick
-    ctx.beginPath()
-    for (let x = from; x <= to; x += 4) {
-      // A standing wave between nut and the board's end.
-      const u = (x - from) / (to - from)
-      const yy = y + Math.sin(u * Math.PI) * amp * Math.sin(t / 22 + k)
-      if (x === from) ctx.moveTo(x, yy)
-      else ctx.lineTo(x, yy)
+    ctx.globalAlpha = muted && !bad ? 0.45 : 1
+    ctx.strokeStyle = metal
+    ctx.lineWidth = thick
+    wave()
+    if (lit || bad) {
+      // The glow, over the bare string so a dim one still reads as a string.
+      const a = bad ? 1 : alpha
+      ctx.globalAlpha = a
+      ctx.shadowColor = bad ? wrong : ring
+      ctx.shadowBlur = 16 * a
+      ctx.strokeStyle = bad ? wrong : ring
+      ctx.lineWidth = thick + 1
+      wave()
+      ctx.shadowBlur = 0
+      ctx.globalAlpha = 1
     }
-    ctx.stroke()
-    ctx.shadowBlur = 0
 
     // Winding texture on the bass strings.
     if (WOUND[k] && !lit && thick > 2) {
@@ -619,6 +639,7 @@ function drawShape(
   g: Geo,
   chord: Chord,
   ringing: boolean[] | null,
+  lit: Lit | null,
   alpha: number,
   ghost: boolean,
   color: (n: string) => string,
@@ -663,15 +684,17 @@ function drawShape(
       ctx.setLineDash([])
       return
     }
-    const on = ringing?.[k]
+    // A ringing string's dot turns green, as far as the strum earned.
+    const glow = ringing?.[k] && lit ? lit.alpha : 0
+    const mid = mix(color('--finger'), lit?.ring ?? '#000000', glow)
     const body = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.15, x, y, r)
-    body.addColorStop(0, on ? '#d8ffe4' : '#ffe2a8')
-    body.addColorStop(0.45, on ? color('--ring') : color('--finger'))
-    body.addColorStop(1, on ? '#2f7d4a' : '#9a5a14')
+    body.addColorStop(0, mix(mid, '#ffffff', 0.65))
+    body.addColorStop(0.45, mid)
+    body.addColorStop(1, mix(mid, '#000000', 0.5))
     ctx.fillStyle = body
-    ctx.shadowColor = on ? color('--ring') : 'rgba(0, 0, 0, 0.55)'
-    ctx.shadowBlur = on ? 18 : 8
-    ctx.shadowOffsetY = on ? 0 : 3
+    ctx.shadowColor = glow ? mid : 'rgba(0, 0, 0, 0.55)'
+    ctx.shadowBlur = glow ? 18 * glow : 8
+    ctx.shadowOffsetY = glow ? 0 : 3
     ctx.beginPath()
     ctx.arc(x, y, r, 0, Math.PI * 2)
     ctx.fill()
@@ -687,27 +710,33 @@ function drawShape(
 }
 
 /** Open (○) and muted (✕) markers left of the nut. */
-function drawMarkers(ctx: CanvasRenderingContext2D, g: Geo, chord: Chord | null, ringing: boolean[], color: (n: string) => string) {
+function drawMarkers(ctx: CanvasRenderingContext2D, g: Geo, chord: Chord | null, ringing: boolean[], lit: Lit, color: (n: string) => string) {
   if (!chord) return
   const r = Math.min(g.gap * 0.28, 9)
   chord.frets.forEach((fret, k) => {
     const x = g.markerX
     const y = g.stringY(k)
     if (fret < 0) {
-      ctx.strokeStyle = color('--miss')
-      ctx.lineWidth = 2.5
+      const bad = lit.mutedHit[k]
+      ctx.strokeStyle = bad ? lit.wrong : color('--miss')
+      ctx.lineWidth = bad ? 3.5 : 2.5
+      if (bad) {
+        ctx.shadowColor = lit.wrong
+        ctx.shadowBlur = 12
+      }
       ctx.beginPath()
       ctx.moveTo(x - r * 0.7, y - r * 0.7)
       ctx.lineTo(x + r * 0.7, y + r * 0.7)
       ctx.moveTo(x + r * 0.7, y - r * 0.7)
       ctx.lineTo(x - r * 0.7, y + r * 0.7)
       ctx.stroke()
+      ctx.shadowBlur = 0
     } else if (fret === 0) {
       const on = ringing[k]
-      ctx.strokeStyle = on ? color('--ring') : color('--text')
+      ctx.strokeStyle = on ? mix(color('--text'), lit.ring, lit.alpha) : color('--text')
       ctx.lineWidth = 2.5
       if (on) {
-        ctx.shadowColor = color('--ring')
+        ctx.shadowColor = lit.ring
         ctx.shadowBlur = 12
       }
       ctx.beginPath()
@@ -719,6 +748,45 @@ function drawMarkers(ctx: CanvasRenderingContext2D, g: Geo, chord: Chord | null,
 }
 
 /** Small deterministic RNG so the wood grain is the same every time. */
+/** What lit strings look like this frame. */
+interface Lit {
+  ring: string
+  /** How brightly strings that rang glow, 0..1 */
+  alpha: number
+  wrong: string
+  /** Muted strings hit by mistake */
+  mutedHit: boolean[]
+}
+
+/** Blend two #rrggbb colors: 0 = a, 1 = b. */
+function mix(a: string, b: string, k: number) {
+  const pa = parseInt(a.slice(1), 16)
+  const pb = parseInt(b.slice(1), 16)
+  const ch = (p: number, shift: number) => (p >> shift) & 255
+  return `#${[16, 8, 0].map((sh) => Math.round(ch(pa, sh) * (1 - k) + ch(pb, sh) * k).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** "Not Am": the strum didn't sound like the chord, however loud it was. */
+function drawWrong(ctx: CanvasRenderingContext2D, g: Geo, chord: Chord, color: (n: string) => string) {
+  const size = g.w < 560 ? 15 : 18
+  const text = `✕ Not ${chord.name}`
+  ctx.font = `700 ${size}px 'Barlow Condensed', system-ui, sans-serif`
+  const w = ctx.measureText(text).width + size * 1.2
+  const h = size * 1.6
+  const x = g.boardRight - w - 10
+  const y = g.neckTop + 6
+  ctx.fillStyle = 'rgba(8, 8, 10, 0.85)'
+  roundRect(ctx, x, y, w, h, h / 2)
+  ctx.fill()
+  ctx.strokeStyle = color('--wrong')
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  ctx.fillStyle = color('--wrong')
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x + w / 2, y + h / 2 + 1)
+}
+
 function seeded(seed: number) {
   let s = seed
   return () => {

@@ -163,6 +163,29 @@ export function scoreStrings(
   return { ...strum, independent: strict.independent }
 }
 
+/** A muted string must stand this much further above the noise than a played one to count as hit. */
+export const MUTED_EXTRA_DB = 6
+
+/** Open-string notes in standard tuning, low E → high e, in Hz. */
+const OPEN_HZ = [82.41, 110, 146.83, 196, 246.94, 329.63]
+
+/**
+ * The chord's muted strings (✕) that are ringing open anyway, strummed by mistake (the low E in
+ * Am). A muted string is always below every string that's played, so nothing else's overtones land
+ * on its note; it's judged on that note alone, measured narrowly so a nearby note's spill can't
+ * count, and needs extra margin so a string humming in sympathy doesn't.
+ */
+export function mutedRinging(spec: ArrayLike<number>, binHz: number, chord: Chord, threshold: number, allowed: boolean): boolean[] {
+  return chord.frets.map((f, s) => {
+    if (!allowed || f >= 0) return false
+    const hz = OPEN_HZ[s]
+    const b = Math.round(hz / binHz)
+    const peak = Math.max(spec[b - 1], spec[b], spec[b + 1])
+    const floor = median(spec, toBin(hz / LOCAL_FLOOR_SPAN, binHz), toBin(hz * LOCAL_FLOOR_SPAN, binHz) + 1)
+    return peak - floor > threshold + MUTED_EXTRA_DB - (hz < BASS_BELOW_HZ ? BASS_RELIEF_DB : 0)
+  })
+}
+
 function decide(
   spec: ArrayLike<number>,
   binHz: number,
@@ -261,9 +284,10 @@ export function chordFit(spec: ArrayLike<number>, binHz: number, chord: Chord, o
   const match = profileMatch(profile, chordTemplate(chord))
   let rival = 0
   for (const other of others) {
-    const pcs = chordPitchClasses(other)
-    const same = pcs.size === target.size && [...pcs].every((p) => target.has(p))
-    if (!same) rival = Math.max(rival, profileMatch(profile, chordTemplate(other)))
+    // The same notes, or the same notes plus one (Am7 for Am, G7 for G): not a rival. Overtones put
+    // a little of every chord's 7th into the sound, so its 7th version can fit as well as it does.
+    if (isTwin(target, chordPitchClasses(other))) continue
+    rival = Math.max(rival, profileMatch(profile, chordTemplate(other)))
   }
   return { match, rival }
 }
@@ -277,7 +301,7 @@ export function chromaMatch(spec: ArrayLike<number>, binHz: number, chord: Chord
 function pitchProfile(spec: ArrayLike<number>, binHz: number) {
   const floor = median(spec, toBin(70, binHz), toBin(MAX_PARTIAL_HZ, binHz))
   const chroma = new Array<number>(12).fill(0)
-  for (let b = Math.floor(75 / binHz); b <= Math.ceil(1600 / binHz); b++) {
+  for (let b = Math.floor(PROFILE_LO_HZ / binHz); b <= Math.ceil(PROFILE_HI_HZ / binHz); b++) {
     const above = spec[b] - floor - 12
     if (above <= 0) continue
     const midi = Math.round(12 * Math.log2((b * binHz) / 440) + 69)
@@ -286,33 +310,39 @@ function pitchProfile(spec: ArrayLike<number>, binHz: number) {
   return chroma
 }
 
+/** The range the heard profile covers. */
+const PROFILE_LO_HZ = 75
+const PROFILE_HI_HZ = 1600
+/** How much less each harmonic counts than the one below it, in the template. */
+export const HARMONIC_DECAY = 0.9
+
 /**
- * What a chord's strings put on each note name, overtones included: a string's 2nd and 4th
- * overtones are its own note again, its 3rd and 6th a fifth up and its 5th a major third up (an A
- * string also sounds some E and C#), so a strummed chord always carries some notes it doesn't
- * contain. The profile is built from dB levels, so overtones weigh nearly as much as the note.
+ * What a chord's strings put on each note name, overtones included: a string's 2nd, 4th and 8th
+ * harmonics are its own note again, but its 3rd and 6th are a fifth up, its 5th a major third up
+ * and its 7th a minor seventh up (a G string also sounds some D, B and F: without them G reads as
+ * G7). The heard profile adds up dB above the noise, so every harmonic in range counts nearly as
+ * much as the note itself, and low strings have many more of them in range than high ones.
  */
-const OVERTONES = [
-  { semitones: 0, weight: 1 },
-  { semitones: 12, weight: 0.8 },
-  { semitones: 19, weight: 0.5 },
-  { semitones: 24, weight: 0.6 },
-  { semitones: 28, weight: 0.3 },
-  { semitones: 31, weight: 0.3 },
-]
 const templates = new Map<string, number[]>()
 function chordTemplate(chord: Chord) {
   let t = templates.get(chord.id)
   if (!t) {
     t = new Array<number>(12).fill(0)
-    for (let s = 0; s < 6; s++) {
-      const m = stringMidi(chord, s)
-      if (m !== null) for (const o of OVERTONES) t[(m + o.semitones) % 12] += o.weight
+    for (const f of chordFrequencies(chord)) {
+      if (f === null) continue
+      for (let h = 1; h * f <= PROFILE_HI_HZ; h++) {
+        if (h * f < PROFILE_LO_HZ) continue
+        const midi = Math.round(12 * Math.log2((h * f) / 440) + 69)
+        t[midi % 12] += HARMONIC_DECAY ** (h - 1)
+      }
     }
     templates.set(chord.id, t)
   }
   return t
 }
+
+/** `other` has all of `target`'s notes and at most one more. */
+const isTwin = (target: Set<number>, other: Set<number>) => [...target].every((p) => other.has(p)) && other.size - target.size <= 1
 
 /** Cosine similarity (0..1) between the heard pitch-class profile and a chord's template. */
 function profileMatch(chroma: number[], template: number[]) {

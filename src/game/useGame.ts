@@ -4,6 +4,7 @@ import { type Chord, CHORDS_BY_ID } from '../music/chords'
 import { RIVAL_LEEWAY } from '../audio/detect'
 import { applyJudgment, emptyScore, judge, type Judgment, missJudgment, type ScoreState } from './scoring'
 import { adaptTempo, emptyTempo } from './tempo'
+import { emptyLight, gradeLight, type StrumLight, type Tone, updateLight } from './strumLight'
 
 export const newKey = () => Math.random().toString(36).slice(2, 10)
 
@@ -51,9 +52,11 @@ export interface GameView {
   targetAbs: number | null
   lastJudgment: Judgment | null
   multiplier: number
-  /** The chord being listened for, and which of its strings are ringing right now */
+  /** The chord being listened for, the strings to light, and in what color (see `StrumLight`) */
   display: Chord | null
   ringing: boolean[]
+  tone: Tone | null
+  light: StrumLight
   /** The latest analysis, for the lesson screens to listen with */
   heard: Heard
 }
@@ -150,7 +153,7 @@ export function useGame(
     onTempoRef.current = onTempo
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false), heard: { at: 0, onset: 0, chordId: null, strings: Array(6).fill(false), soundsRight: false, notes: Array(6).fill(0) } })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false), tone: null, light: emptyLight(), heard: { at: 0, onset: 0, chordId: null, strings: Array(6).fill(false), soundsRight: false, notes: Array(6).fill(0) } })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
@@ -220,6 +223,7 @@ export function useGame(
         v.results.set(j.abs, j)
         scoreRef.current = applyJudgment(scoreRef.current, j)
         v.lastJudgment = j
+        v.light = gradeLight(v.light, j.grade)
         v.multiplier = scoreRef.current.multiplier
         setScore(scoreRef.current)
         if (s.adaptiveTempo && v.phase === 'playing') {
@@ -342,7 +346,8 @@ export function useGame(
         if (inWindow) {
           if (st.windowOpenedAt === null) st.windowOpenedAt = now
           const expected = expectedStrings(target)
-          const ringing = a.strings.filter((on, i) => on && target!.chord.frets[i] >= 0).length
+          // Each muted string hit by mistake costs one of the strings that rang.
+          const ringing = Math.max(0, a.strings.filter((on, i) => on && target!.chord.frets[i] >= 0).length - a.muted.filter(Boolean).length)
           const strummedNow = a.lastOnsetAt >= st.windowOpenedAt - 0.15
           // Start judging once enough of the chord is recognised, then take the best string count.
           if (!st.judging && strummedNow && soundsRight && ringing / expected >= MIN_STRINGS) {
@@ -357,7 +362,9 @@ export function useGame(
 
       const strings = analysisChord ? a.strings : Array(6).fill(false)
       v.display = analysisChord
-      v.ringing = strings
+      v.light = updateLight(v.light, { now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings, soundsRight, muted: a.muted })
+      v.ringing = v.light.strings
+      v.tone = v.light.tone
       const key = [strings.join(), a.match.toFixed(2), a.level.toFixed(3), analysisChord?.id, next?.id, countdown].join('|')
       if (key !== uiKey.current) {
         uiKey.current = key

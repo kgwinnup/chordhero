@@ -8,6 +8,7 @@ import { PresetEditor } from './components/PresetEditor'
 import { DetectorLab } from './components/DetectorLab'
 import { TuneView } from './components/TuneView'
 import { Learn } from './components/Learn'
+import { InstallToast } from './components/InstallToast'
 import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, saveCustomPresets, toSeq } from './game/presets'
 import { newKey, type Settings, useGame } from './game/useGame'
 import { starsFor } from './game/scoring'
@@ -329,6 +330,7 @@ export default function App() {
         </div>
       </header>
 
+      <InstallToast hidden={gateOpen || running || !!results || !!editing || settingsOpen || labOpen} />
       {gateOpen && <MicGate error={micError} onEnable={() => enableMic()} onDemo={() => toggleTestMode(true)} />}
       {settingsOpen && (
         <SettingsSheet

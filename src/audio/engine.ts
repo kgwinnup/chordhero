@@ -1,5 +1,5 @@
 import { type Chord, CHORDS, midiToFreq, stringMidi } from '../music/chords'
-import { chordFit, isNoiseLike, noteLevels, scoreStrings } from './detect'
+import { chordFit, isNoiseLike, mutedRinging, noteLevels, scoreStrings } from './detect'
 import { type Pitch, type PitchRange, yinPitch } from './pitch'
 
 export type { Pitch } from './pitch'
@@ -21,6 +21,8 @@ export interface Analysis {
   lastOnsetAt: number
   /** Per string: dB its note stands above the noise (see `noteLevels`) */
   notes: number[]
+  /** Muted strings (✕) ringing anyway: hit by mistake (see `mutedRinging`) */
+  muted: boolean[]
 }
 
 const FFT_SIZE = 16384 // ~2.9 Hz/bin at 48 kHz: enough to separate low E from F
@@ -54,6 +56,8 @@ export class AudioEngine {
   private ringAt: number[] = new Array(6).fill(-Infinity)
   /** Per string: consecutive frames it has read as ringing, and whether it had its own evidence last frame. */
   private streak: number[] = new Array(6).fill(0)
+  private mutedAt: number[] = new Array(6).fill(-Infinity)
+  private mutedStreak: number[] = new Array(6).fill(0)
   private wasIndependent: boolean[] = new Array(6).fill(false)
   private ringChordId: string | null = null
   private rmsHistory: { t: number; v: number }[] = []
@@ -102,6 +106,8 @@ export class AudioEngine {
     this.rmsHistory = []
     this.ringAt.fill(-Infinity)
     this.streak.fill(0)
+    this.mutedAt.fill(-Infinity)
+    this.mutedStreak.fill(0)
     this.wasIndependent.fill(false)
     this.lastOnsetAt = -Infinity
   }
@@ -267,10 +273,13 @@ export class AudioEngine {
       this.ringChordId = chord?.id ?? null
       this.ringAt.fill(-Infinity)
       this.streak.fill(0)
+      this.mutedAt.fill(-Infinity)
+      this.mutedStreak.fill(0)
       this.wasIndependent.fill(false)
     }
 
     const strings = new Array<boolean>(6).fill(false)
+    const muted = new Array<boolean>(6).fill(false)
     let scores = new Array<number>(6).fill(0)
     let match = 0
     let rival = 0
@@ -287,9 +296,15 @@ export class AudioEngine {
         if (this.streak[s] >= PERSIST_FRAMES) this.ringAt[s] = now
         strings[s] = now - this.ringAt[s] < HOLD_SECONDS
       }
+      const hit = mutedRinging(this.freqData, binHz, chord, threshold, allowed)
+      for (let s = 0; s < 6; s++) {
+        this.mutedStreak[s] = hit[s] ? this.mutedStreak[s] + 1 : 0
+        if (this.mutedStreak[s] >= PERSIST_FRAMES) this.mutedAt[s] = now
+        muted[s] = now - this.mutedAt[s] < HOLD_SECONDS
+      }
       if (gate) ({ match, rival } = chordFit(this.freqData, binHz, chord, CHORDS))
     }
 
-    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt, notes }
+    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt, notes, muted }
   }
 }
