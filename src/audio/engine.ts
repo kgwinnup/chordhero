@@ -1,5 +1,5 @@
-import { type Chord, midiToFreq, stringMidi } from '../music/chords'
-import { chromaMatch, isNoiseLike, scoreStrings } from './detect'
+import { type Chord, CHORDS, midiToFreq, stringMidi } from '../music/chords'
+import { chordFit, isNoiseLike, scoreStrings } from './detect'
 import { type Pitch, type PitchRange, yinPitch } from './pitch'
 
 export type { Pitch } from './pitch'
@@ -15,6 +15,8 @@ export interface Analysis {
   scores: number[]
   /** 0..1 similarity between what we hear and the chord's notes */
   match: number
+  /** The same similarity for the best-fitting other chord */
+  rival: number
   /** AudioContext time of the last detected strum */
   lastOnsetAt: number
 }
@@ -267,6 +269,7 @@ export class AudioEngine {
     const strings = new Array<boolean>(6).fill(false)
     let scores = new Array<number>(6).fill(0)
     let match = 0
+    let rival = 0
     if (chord) {
       const allowed = gate && !isNoiseLike(this.freqData, binHz)
       const result = scoreStrings(this.freqData, binHz, chord, threshold, allowed, this.wasIndependent)
@@ -278,9 +281,9 @@ export class AudioEngine {
         if (this.streak[s] >= PERSIST_FRAMES) this.ringAt[s] = now
         strings[s] = now - this.ringAt[s] < HOLD_SECONDS
       }
-      if (gate) match = chromaMatch(this.freqData, binHz, chord)
+      if (gate) ({ match, rival } = chordFit(this.freqData, binHz, chord, CHORDS))
     }
 
-    return { level, gate, strings, scores, match, lastOnsetAt: this.lastOnsetAt }
+    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt }
   }
 }

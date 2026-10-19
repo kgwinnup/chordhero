@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { type Chord, CHORDS, CHORDS_BY_ID, STRING_NAMES } from '../music/chords'
-import { chordFrequencies, chromaMatch, isNoiseLike, scoreStrings } from './detect'
+import { type Chord, chordPitchClasses, CHORDS, CHORDS_BY_ID, STRING_NAMES } from '../music/chords'
+import { chordFit, chordFrequencies, chromaMatch, isNoiseLike, RIVAL_LEEWAY, scoreStrings } from './detect'
 
 const SAMPLE_RATE = 48000
 const FFT_SIZE = 16384
@@ -131,5 +131,44 @@ describe('chord match', () => {
     const spec = spectrum(played(g, sounding(g)), FLAT)
     expect(chromaMatch(spec, BIN_HZ, g)).toBeGreaterThan(0.8)
     expect(chromaMatch(spec, BIN_HZ, CHORDS_BY_ID['Am'])).toBeLessThan(chromaMatch(spec, BIN_HZ, g))
+  })
+})
+
+describe('telling chords apart', () => {
+  const fits = (chord: Chord, spec: Float32Array) => {
+    const { match, rival } = chordFit(spec, BIN_HZ, chord, CHORDS)
+    return match >= 0.6 && match >= rival - RIVAL_LEEWAY
+  }
+  const samePitches = (a: Chord, b: Chord) => {
+    const pa = chordPitchClasses(a)
+    const pb = chordPitchClasses(b)
+    return pa.size === pb.size && [...pa].every((p) => pb.has(p))
+  }
+
+  describe.each([
+    ['flat mic', FLAT],
+    ['phone mic', PHONE],
+  ])('with a %s', (_, mic) => {
+    it.each(CHORDS.map((c) => [c.name, c] as const))('%s played right fits %s better than any other chord', (_, chord) => {
+      expect(fits(chord, spectrum(played(chord, sounding(chord)), mic))).toBe(true)
+    })
+
+    it('a loudly strummed wrong chord almost never passes for the target', () => {
+      let pairs = 0
+      let passed = 0
+      for (const target of CHORDS) {
+        for (const wrong of CHORDS) {
+          if (samePitches(target, wrong)) continue
+          pairs++
+          if (fits(target, spectrum(played(wrong, sounding(wrong)), mic, { level: -30 }))) passed++
+        }
+      }
+      expect(passed / pairs).toBeLessThan(0.02)
+    })
+
+    it('bashing all six open strings passes for at most a couple of chords', () => {
+      const open = spectrum([82.41, 110, 146.83, 196, 246.94, 329.63], mic, { level: -30 })
+      expect(CHORDS.filter((c) => fits(c, open)).length).toBeLessThanOrEqual(2)
+    })
   })
 })

@@ -5,9 +5,20 @@
  */
 import { type Chord, chordPitchClasses, midiToFreq, stringMidi } from '../music/chords'
 
-export const TOLERANCE = Math.pow(2, 40 / 1200) // ±40 cents around each expected note
+// ±30 cents around each expected note: tight enough that a loud strum's dense overtones rarely land
+// on a string's note by chance (and the tuner gets the guitar well within it).
+export const TOLERANCE = Math.pow(2, 30 / 1200)
 /** Overtones checked per string, and how much each is discounted (indexed by harmonic number). */
 export const HARMONIC_PENALTY = [0, 0, 0, 3, 6, 8, 10]
+/**
+ * Overtones checked above the fundamental. Higher overtones crowd together, so in a loud strum some
+ * other note's overtone is nearly always nearby; only bass strings, whose fundamentals small mics
+ * barely hear, need the higher ones.
+ */
+/** How many bins a peak spills over on each side (window main lobe). */
+const LEAK_BINS = 3
+const MAX_HARMONIC = 3
+const MAX_HARMONIC_BASS = 6
 /** Each note is compared with the noise within half an octave either side of it. */
 const LOCAL_FLOOR_SPAN = Math.SQRT2
 /** Bass strings get this much slack: even with a local floor, built-in mics hear them least clearly. */
@@ -34,6 +45,11 @@ const OVERTONE_FADE_DB = 3
 const STRUM_MIN_STRINGS = 3
 /** …and at least this share of the chord's strings. */
 const STRUM_MIN_SHARE = 0.5
+/**
+ * A chord counts only if no chord with different notes fits the sound better, give or take this
+ * much (so near-twins like Em and Em7 don't trip it).
+ */
+export const RIVAL_LEEWAY = 0.03
 /** Highest partial considered. */
 const MAX_PARTIAL_HZ = 2500
 /** Above this spectral flatness the sound is noise-like (key clicks, taps, rustle), not strings. */
@@ -136,7 +152,9 @@ function decide(
   strum: boolean,
 ): StringScores {
   const expected = chordFrequencies(chord)
-  const near = (a: number, b: number) => a / b < TOLERANCE && b / a < TOLERANCE
+  // Whether two partials could be the same peak. Wider than the measuring window: a peak spills
+  // over a few bins either side, so a partial just outside the window still shows up inside it.
+  const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(a, b) * (TOLERANCE - 1) + LEAK_BINS * binHz
   /** Is `hf` (close to) some overtone of the note `g`? Returns which one, or 0. */
   const overtoneOf = (hf: number, g: number) => {
     const k = Math.round(hf / g)
@@ -154,7 +172,8 @@ function decide(
   for (const { f, i: s } of order) {
     let best = -Infinity
     let bestOwn = -Infinity
-    for (let h = 1; h < HARMONIC_PENALTY.length; h++) {
+    const maxH = f < BASS_BELOW_HZ ? MAX_HARMONIC_BASS : MAX_HARMONIC
+    for (let h = 1; h <= maxH; h++) {
       const hf = h * f
       if (hf > MAX_PARTIAL_HZ) break
       let usable = true
@@ -173,10 +192,10 @@ function decide(
             // Strum: does this peak add to what the lower string alone would put here? Estimate that
             // from its overtones either side that no other string's notes cover, assuming a gentle fade.
             const claimed = (nf: number) => expected.some((g2, o2) => o2 !== o && o2 !== s && g2 !== null && overtoneOf(nf, g2))
-            const estimates = [k - 1, k + 1, k - 2, k + 2]
-              .filter((n) => n >= 1 && n * g <= MAX_PARTIAL_HZ && !claimed(n * g))
-              .slice(0, 2)
-              .map((n) => contrast(n * g) - (k - n) * OVERTONE_FADE_DB)
+            // Use the closest clean overtones (one step away if possible): extrapolating further is unreliable.
+            const clean = [k - 1, k + 1, k - 2, k + 2].filter((n) => n >= 1 && n * g <= MAX_PARTIAL_HZ && !claimed(n * g))
+            const nearest = Math.min(...clean.map((n) => Math.abs(n - k)))
+            const estimates = clean.filter((n) => Math.abs(n - k) === nearest).map((n) => contrast(n * g) - (k - n) * OVERTONE_FADE_DB)
             // Every side covered by other strings: nothing to compare against, benefit of the doubt.
             if (estimates.length) {
               const alone = estimates.reduce((a, b) => a + b, 0) / estimates.length
@@ -210,8 +229,31 @@ function decide(
   return { scores, ringing, independent }
 }
 
+/**
+ * How well the sound fits `chord` compared with every other chord: `match` for the target, and
+ * `rival` for the best-fitting chord with different notes. A strum that sounds more like some
+ * other chord than the one asked for wasn't that chord, however loud.
+ */
+export function chordFit(spec: ArrayLike<number>, binHz: number, chord: Chord, others: readonly Chord[]) {
+  const profile = pitchProfile(spec, binHz)
+  const target = chordPitchClasses(chord)
+  const match = profileMatch(profile, target)
+  let rival = 0
+  for (const other of others) {
+    const pcs = chordPitchClasses(other)
+    const same = pcs.size === target.size && [...pcs].every((p) => target.has(p))
+    if (!same) rival = Math.max(rival, profileMatch(profile, pcs))
+  }
+  return { match, rival }
+}
+
 /** Cosine similarity (0..1) between the heard pitch-class profile and the chord's notes. */
 export function chromaMatch(spec: ArrayLike<number>, binHz: number, chord: Chord) {
+  return profileMatch(pitchProfile(spec, binHz), chordPitchClasses(chord))
+}
+
+/** How much of what's heard falls on each of the 12 note names. */
+function pitchProfile(spec: ArrayLike<number>, binHz: number) {
   const floor = median(spec, toBin(70, binHz), toBin(MAX_PARTIAL_HZ, binHz))
   const chroma = new Array<number>(12).fill(0)
   for (let b = Math.floor(75 / binHz); b <= Math.ceil(1600 / binHz); b++) {
@@ -220,7 +262,10 @@ export function chromaMatch(spec: ArrayLike<number>, binHz: number, chord: Chord
     const midi = Math.round(12 * Math.log2((b * binHz) / 440) + 69)
     chroma[((midi % 12) + 12) % 12] += above
   }
-  const pcs = chordPitchClasses(chord)
+  return chroma
+}
+
+function profileMatch(chroma: number[], pcs: Set<number>) {
   let dot = 0
   let norm = 0
   chroma.forEach((v, pc) => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
 import { type Chord, CHORDS_BY_ID } from '../music/chords'
+import { RIVAL_LEEWAY } from '../audio/detect'
 import { applyJudgment, emptyScore, judge, type Judgment, missJudgment, type ScoreState } from './scoring'
 
 export const newKey = () => Math.random().toString(36).slice(2, 10)
@@ -63,6 +64,8 @@ export interface UiState {
 
 /** How early (in beats) a strum may land before a chord's start and still count. */
 export const EARLY_BEATS = 0.5
+/** Share of a chord's strings that must ring before it can score at all. */
+const MIN_STRINGS = 0.5
 /** After a chord is first recognised, keep listening this long for the rest of its strings. */
 const JUDGE_SECONDS = 0.3
 /** Onset detection lags the actual strum by roughly this much. */
@@ -286,9 +289,10 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
           const expected = expectedStrings(target)
           const ringing = a.strings.filter((on, i) => on && target!.chord.frets[i] >= 0).length
           const strummedNow = a.lastOnsetAt >= st.windowOpenedAt - 0.15
-          const soundsRight = a.gate && a.match >= minMatch - 0.1
+          // It has to sound like this chord, and more like it than like any other chord.
+          const soundsRight = a.gate && a.match >= minMatch - 0.1 && a.match >= a.rival - RIVAL_LEEWAY
           // Start judging once enough of the chord is recognised, then take the best string count.
-          if (!st.judging && strummedNow && soundsRight && ringing / expected >= 0.34) {
+          if (!st.judging && strummedNow && soundsRight && ringing / expected >= MIN_STRINGS) {
             st.judging = { abs: target.abs, until: now + JUDGE_SECONDS, best: ringing, onset: a.lastOnsetAt }
           }
           if (st.judging?.abs === target.abs) {
