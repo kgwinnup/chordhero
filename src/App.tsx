@@ -136,7 +136,6 @@ export default function App() {
     engine.strum(CHORDS_BY_ID[chordId], engine.ctx.currentTime, settings.testMode)
   }
 
-  const listening = mic === 'on' || settings.testMode
   const gateOpen = !settings.testMode && !(mic === 'on' && micReady)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const changeDevice = (id: string) => {
@@ -192,7 +191,6 @@ export default function App() {
           </button>
         </div>
         <div className="row">
-          <Meter level={ui.level} active={listening} />
           {mic === 'on' ? (
             <button
               className="ghost mic-on"
@@ -323,15 +321,6 @@ export default function App() {
           onClose={() => setEditing(null)}
         />
       )}
-    </div>
-  )
-}
-
-function Meter({ level, active }: { level: number; active: boolean }) {
-  const pct = active ? Math.min(100, Math.max(0, ((20 * Math.log10(level + 1e-6) + 60) / 60) * 100)) : 0
-  return (
-    <div className="meter" title="Input level" aria-label="Input level">
-      <div style={{ width: `${pct}%` }} />
     </div>
   )
 }

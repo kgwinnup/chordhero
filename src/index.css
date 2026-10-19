@@ -244,19 +244,6 @@ h3 {
   min-width: 0;
   font-size: 17px;
 }
-.meter {
-  width: 90px;
-  height: 8px;
-  border-radius: 4px;
-  background: #141417;
-  box-shadow: var(--trim);
-  overflow: hidden;
-}
-.meter > div {
-  height: 100%;
-  background: linear-gradient(90deg, var(--green), var(--accent-3) 70%, var(--red));
-  transition: width 60ms linear;
-}
 .mic-on {
   display: inline-flex;
   align-items: center;
@@ -1161,9 +1148,6 @@ h3 {
   .topbar h1 {
     font-size: 27px;
     white-space: nowrap;
-  }
-  .topbar .meter {
-    display: none;
   }
   .preset-picker {
     order: 3;
