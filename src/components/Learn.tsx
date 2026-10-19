@@ -146,6 +146,9 @@ export function Learn(props: Props) {
 
 /** Seconds after a strum's onset to gather its strings: octave strings can take a moment to light. */
 const STRUM_WINDOW = 0.6
+/** Frames in a strum's window that must sound like the chord: one stray frame isn't enough. */
+const RIGHT_FRAMES = 3
+
 /** How far back from an onset to look for each note's level before it (the spectrum lags the sound). */
 const BEFORE_WINDOW = 0.4
 
@@ -176,7 +179,7 @@ function useStrums(
     let raf = 0
     // Anything already ringing belongs to the chord before.
     let seen = view.current.heard.onset
-    let win: (Heard & { until: number }) | null = null
+    let win: (Heard & { until: number; right: number }) | null = null
     const recent: { at: number; notes: number[] }[] = []
     const tick = () => {
       raf = requestAnimationFrame(tick)
@@ -199,7 +202,7 @@ function useStrums(
           seen = h.onset
           // The quietest each note was just before.
           const before = h.notes.map((_, i) => lowest(i))
-          win = { until: h.at + STRUM_WINDOW, ringing: [...h.strings], soundsRight: h.soundsRight, before, after: [...h.notes] }
+          win = { until: h.at + STRUM_WINDOW, right: h.soundsRight ? 1 : 0, ringing: [...h.strings], soundsRight: false, before, after: [...h.notes] }
         }
         recent.push({ at: h.at, notes: h.notes })
         while (recent.length && recent[0].at < h.at - BEFORE_WINDOW) recent.shift()
@@ -209,10 +212,10 @@ function useStrums(
         if (on) win!.ringing[i] = true
       })
       win.after = win.after.map((v, i) => Math.max(v, h.notes[i]))
-      win.soundsRight ||= h.soundsRight
+      if (h.soundsRight) win.right++
       if (h.at >= win.until) {
-        const { until: _, ...heard } = win
-        cb.current(heard)
+        const { until: _, right, ...heard } = win
+        cb.current({ ...heard, soundsRight: right >= RIGHT_FRAMES })
         win = null
         seen = h.onset
         recent.length = 0

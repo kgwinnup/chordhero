@@ -258,19 +258,19 @@ function decide(
 export function chordFit(spec: ArrayLike<number>, binHz: number, chord: Chord, others: readonly Chord[]) {
   const profile = pitchProfile(spec, binHz)
   const target = chordPitchClasses(chord)
-  const match = profileMatch(profile, target)
+  const match = profileMatch(profile, chordTemplate(chord))
   let rival = 0
   for (const other of others) {
     const pcs = chordPitchClasses(other)
     const same = pcs.size === target.size && [...pcs].every((p) => target.has(p))
-    if (!same) rival = Math.max(rival, profileMatch(profile, pcs))
+    if (!same) rival = Math.max(rival, profileMatch(profile, chordTemplate(other)))
   }
   return { match, rival }
 }
 
 /** Cosine similarity (0..1) between the heard pitch-class profile and the chord's notes. */
 export function chromaMatch(spec: ArrayLike<number>, binHz: number, chord: Chord) {
-  return profileMatch(pitchProfile(spec, binHz), chordPitchClasses(chord))
+  return profileMatch(pitchProfile(spec, binHz), chordTemplate(chord))
 }
 
 /** How much of what's heard falls on each of the 12 note names. */
@@ -286,12 +286,43 @@ function pitchProfile(spec: ArrayLike<number>, binHz: number) {
   return chroma
 }
 
-function profileMatch(chroma: number[], pcs: Set<number>) {
+/**
+ * What a chord's strings put on each note name, overtones included: a string's 2nd and 4th
+ * overtones are its own note again, its 3rd and 6th a fifth up and its 5th a major third up (an A
+ * string also sounds some E and C#), so a strummed chord always carries some notes it doesn't
+ * contain. The profile is built from dB levels, so overtones weigh nearly as much as the note.
+ */
+const OVERTONES = [
+  { semitones: 0, weight: 1 },
+  { semitones: 12, weight: 0.8 },
+  { semitones: 19, weight: 0.5 },
+  { semitones: 24, weight: 0.6 },
+  { semitones: 28, weight: 0.3 },
+  { semitones: 31, weight: 0.3 },
+]
+const templates = new Map<string, number[]>()
+function chordTemplate(chord: Chord) {
+  let t = templates.get(chord.id)
+  if (!t) {
+    t = new Array<number>(12).fill(0)
+    for (let s = 0; s < 6; s++) {
+      const m = stringMidi(chord, s)
+      if (m !== null) for (const o of OVERTONES) t[(m + o.semitones) % 12] += o.weight
+    }
+    templates.set(chord.id, t)
+  }
+  return t
+}
+
+/** Cosine similarity (0..1) between the heard pitch-class profile and a chord's template. */
+function profileMatch(chroma: number[], template: number[]) {
   let dot = 0
-  let norm = 0
+  let a = 0
+  let b = 0
   chroma.forEach((v, pc) => {
-    norm += v * v
-    if (pcs.has(pc)) dot += v
+    dot += v * template[pc]
+    a += v * v
+    b += template[pc] * template[pc]
   })
-  return norm > 0 ? dot / (Math.sqrt(norm) * Math.sqrt(pcs.size)) : 0
+  return a > 0 && b > 0 ? dot / Math.sqrt(a * b) : 0
 }

@@ -83,14 +83,18 @@ export interface UiState {
 /** How early (in beats) a strum may land before a chord's start and still count. */
 export const EARLY_BEATS = 0.5
 /** Share of a chord's strings that must ring before it can score at all. */
-const MIN_STRINGS = 0.5
+const MIN_STRINGS = 2 / 3
 /** After a chord is first recognised, keep listening this long for the rest of its strings. */
 const JUDGE_SECONDS = 0.3
+/** Test mode, wait mode: how long the robot waits before strumming a chord that didn't count again. */
+const ROBOT_RETRY_SECONDS = 1.5
 /** Onset detection lags the actual strum by roughly this much. */
 const INPUT_LATENCY = 0.03
 
 /** dB a string must stand above the noise: 24 strict … 6 lenient, 15 at the default sensitivity. */
 export const thresholdFor = (sensitivity: number) => 24 - (sensitivity / 100) * 18
+/** How closely the sound must fit the chord's notes (and their overtones): 0.88 strict … 0.68 lenient. */
+export const minMatchFor = (sensitivity: number) => 0.88 - (sensitivity / 100) * 0.2
 
 export function buildLayout(seq: SeqItem[]): Layout {
   let acc = 0
@@ -155,7 +159,8 @@ export function useGame(
     /** AudioContext time the target chord's beat lands (or when we arrived at it, in wait mode) */
     targetStartTime: 0,
     judging: null as { abs: number; until: number; best: number; onset: number } | null,
-    strummed: new Set<number>(),
+    /** Test mode: when the robot last strummed each chord */
+    strummed: new Map<number, number>(),
     tempo: emptyTempo(),
   })
 
@@ -181,7 +186,7 @@ export function useGame(
     st.nextResolve = 0
     st.windowOpenedAt = null
     st.judging = null
-    st.strummed = new Set()
+    st.strummed = new Map()
     st.tempo = emptyTempo()
     scoreRef.current = emptyScore()
     setScore(scoreRef.current)
@@ -209,7 +214,7 @@ export function useGame(
       const lay = layoutRef.current
       const threshold = thresholdFor(s.sensitivity)
       const now = engine.ctx.currentTime
-      const minMatch = 0.8 - (s.sensitivity / 100) * 0.2
+      const minMatch = minMatchFor(s.sensitivity)
 
       const record = (j: Judgment) => {
         v.results.set(j.abs, j)
@@ -312,8 +317,13 @@ export function useGame(
         next = target ? eventByAbs(lay, target.abs + 1, s.loop)?.chord ?? null : null
 
         // Test mode: a slightly sloppy robot strums along so every grade shows up.
-        if (s.testMode && target && !st.strummed.has(target.abs) && target.start - pos <= EARLY_BEATS) {
-          st.strummed.add(target.abs)
+        // In wait mode the song holds until the chord is played, so it tries again, cleanly.
+        const last = target ? st.strummed.get(target.abs) : undefined
+        if (s.testMode && target && last !== undefined && s.waitMode && !v.results.has(target.abs) && now - last > ROBOT_RETRY_SECONDS) {
+          st.strummed.set(target.abs, now)
+          engine.strum(target.chord, now, true)
+        } else if (s.testMode && target && last === undefined && target.start - pos <= EARLY_BEATS) {
+          st.strummed.set(target.abs, now)
           const r = Math.random()
           const jitter = r < 0.55 ? 0 : (Math.random() - 0.5) * 0.4
           const played = target.chord.frets.flatMap((f, i) => (f >= 0 ? [i] : []))
@@ -324,7 +334,7 @@ export function useGame(
 
       const a = engine.analyze(analysisChord, threshold)
       // It has to sound like this chord, and more like it than like any other chord.
-      const soundsRight = a.gate && a.match >= minMatch - 0.1 && a.match >= a.rival - RIVAL_LEEWAY
+      const soundsRight = a.gate && a.match >= minMatch && a.match >= a.rival - RIVAL_LEEWAY
       v.heard = { at: now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings: a.strings, soundsRight, notes: a.notes }
 
       if (target && (v.phase === 'playing' || v.phase === 'countin')) {

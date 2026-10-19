@@ -36,11 +36,11 @@ export const COMBO_STEP = 6
 
 /** Timing windows in seconds, with the share of points each keeps. */
 const TIMING_TIERS: { within: number; factor: number }[] = [
-  { within: 0.08, factor: 1 },
-  { within: 0.16, factor: 0.85 },
-  { within: 0.28, factor: 0.7 },
+  { within: 0.06, factor: 1 },
+  { within: 0.12, factor: 0.85 },
+  { within: 0.2, factor: 0.7 },
 ]
-const OFF_BEAT_FACTOR = 0.5
+const OFF_BEAT_FACTOR = 0.35
 
 export const GRADE_LABEL: Record<Grade, string> = {
   perfect: 'PERFECT!',
@@ -71,8 +71,8 @@ export function timingFactor(offset: number) {
 
 export function gradeFor(quality: number): Grade {
   if (quality >= 0.95) return 'perfect'
-  if (quality >= 0.8) return 'great'
-  if (quality >= 0.6) return 'good'
+  if (quality >= 0.85) return 'great'
+  if (quality >= 0.7) return 'good'
   return 'ok'
 }
 

@@ -3,7 +3,7 @@ import { judge, emptyScore, missJudgment } from './scoring'
 import { adaptTempo, emptyTempo, MAX_ADAPTIVE_BPM, MIN_ADAPTIVE_BPM, TEMPO_DOWN, TEMPO_UP, TEMPO_UP_STREAK, type TempoState } from './tempo'
 
 const perfect = () => judge(emptyScore(), 0, 6, 6, 0)
-const good = () => judge(emptyScore(), 0, 4, 6, 0) // 0.67 → GOOD
+const good = () => judge(emptyScore(), 0, 5, 6, 0) // 0.83 → GOOD
 const miss = () => missJudgment(0, 6)
 
 function run(bpm: number, judgments: ReturnType<typeof perfect>[]) {

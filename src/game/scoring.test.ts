@@ -4,10 +4,12 @@ import { applyJudgment, COMBO_STEP, emptyScore, gradeFor, judge, MAX_MULTIPLIER,
 describe('timing', () => {
   it('rewards strums closer to the beat', () => {
     expect(timingFactor(0)).toBe(1)
-    expect(timingFactor(0.08)).toBe(1)
+    expect(timingFactor(0.06)).toBe(1)
+    expect(timingFactor(0.08)).toBe(0.85)
     expect(timingFactor(-0.12)).toBe(0.85)
-    expect(timingFactor(0.25)).toBe(0.7)
-    expect(timingFactor(0.6)).toBe(0.5)
+    expect(timingFactor(0.18)).toBe(0.7)
+    expect(timingFactor(0.25)).toBe(0.35)
+    expect(timingFactor(0.6)).toBe(0.35)
   })
 })
 
@@ -15,8 +17,14 @@ describe('grades', () => {
   it('map quality to grades', () => {
     expect(gradeFor(1)).toBe('perfect')
     expect(gradeFor(0.85)).toBe('great')
-    expect(gradeFor(0.65)).toBe('good')
-    expect(gradeFor(0.3)).toBe('ok')
+    expect(gradeFor(0.84)).toBe('good')
+    expect(gradeFor(0.7)).toBe('good')
+    expect(gradeFor(0.69)).toBe('ok')
+  })
+
+  it('a chord missing one of six strings, right on the beat, is GOOD, not GREAT', () => {
+    expect(judge(emptyScore(), 0, 5, 6, 0).grade).toBe('good')
+    expect(judge(emptyScore(), 0, 4, 6, 0).grade).toBe('ok')
   })
 })
 

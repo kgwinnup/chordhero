@@ -6,6 +6,7 @@ const SAMPLE_RATE = 48000
 const FFT_SIZE = 16384
 const BIN_HZ = SAMPLE_RATE / FFT_SIZE
 const THRESHOLD = 15 // the app's default sensitivity
+const MIN_MATCH = 0.78 // the game's chord fit at the default sensitivity
 
 /** Small deterministic RNG so every run sees the same noise. */
 function rng(seed: number) {
@@ -175,7 +176,7 @@ describe('chord match', () => {
 describe('telling chords apart', () => {
   const fits = (chord: Chord, spec: Float32Array) => {
     const { match, rival } = chordFit(spec, BIN_HZ, chord, CHORDS)
-    return match >= 0.6 && match >= rival - RIVAL_LEEWAY
+    return match >= MIN_MATCH && match >= rival - RIVAL_LEEWAY
   }
   const samePitches = (a: Chord, b: Chord) => {
     const pa = chordPitchClasses(a)
