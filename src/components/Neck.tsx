@@ -269,62 +269,106 @@ function fingerPoints(g: Geo, chord: Chord) {
   return chord.frets.flatMap((f, k) => (f > 0 ? [{ x: fingerX(g, f), y: g.stringY(k) }] : f === 0 ? [{ x: g.markerX, y: g.stringY(k) }] : []))
 }
 
-/** Cards for each chord slide toward the "now" edge; the current card is eaten away as its beats pass. */
+/**
+ * The chord strip. The card at the left is the chord to play now. Upcoming chords travel in from
+ * the right, and during the current chord's last beat the incoming one pushes it out to the left,
+ * taking its place exactly on the beat.
+ */
 function drawStrip(ctx: CanvasRenderingContext2D, g: Geo, v: GameView, lay: Layout, looping: boolean, playing: boolean, color: (n: string) => string) {
   const n = lay.items.length
   if (!n) return
-  const nowX = g.labelX
-  const ppb = Math.max(30, Math.min(64, g.w / 13))
-  const pos = v.pos
-  const top = 6
-  const bottom = g.stripH - 4
   const compact = g.w < 560
+  const nowX = g.labelX
+  const w = compact ? 84 : 120
+  const h = g.stripH - 10
+  const ppb = w + 12 // a beat of travel is just over a card's width, so cards never overlap
+  const pos = v.pos
+  const mid = g.stripH / 2 + 1
 
-  const minCard = compact ? 54 : 70
+  // Which event is being played now (none during the count-in), and which comes next.
   const firstCycle = Math.max(0, Math.floor(pos / lay.total))
-  const lastCycle = looping ? Math.floor((pos + g.w / ppb) / lay.total) : 0
-  const cards = []
+  const lastCycle = looping ? Math.floor((pos + g.w / ppb) / lay.total) + 1 : 0
+  const events = []
   for (let cycle = firstCycle; cycle <= lastCycle; cycle++) {
     for (let i = 0; i < n; i++) {
       const e = eventByAbs(lay, cycle * n + i, looping)
-      if (e) cards.push(e)
+      if (e && e.end > pos) events.push(e)
     }
   }
-  // The current card is drawn last so it can sit on top of the next one while it shrinks.
-  cards.sort((a, b) => Number(playing && v.targetAbs === a.abs) - Number(playing && v.targetAbs === b.abs))
-  for (const e of cards) {
-    const current = playing && v.targetAbs === e.abs
-    let x0 = nowX + (e.start - pos) * ppb
-    let x1 = nowX + (e.end - pos) * ppb - 6
-    if (x0 < nowX) x0 = nowX
-    // The current card is eaten away as its beats pass, but never too small to read.
-    if (current) x1 = Math.max(x1, x0 + minCard)
-    if (x1 <= nowX + 8 || x0 > g.w) continue
-    const result = v.results.get(e.abs)
+  const current = pos >= 0 ? events.find((e) => e.start <= pos && pos < e.end) ?? null : null
+  const next = events.find((e) => e.start > pos) ?? null
 
-    ctx.globalAlpha = result && !current ? 0.55 : 1
-    ctx.fillStyle = current ? color('--card-now') : color('--card')
-    roundRect(ctx, x0, top, x1 - x0, bottom - top, 10)
+  // Draw far to near so nearer cards sit on top.
+  for (const e of [...events].reverse()) {
+    const isCurrent = e === current
+    const isNext = e === next
+    let x: number
+    let alpha = 1
+    if (isCurrent) {
+      // Holds at the left, then is pushed out by the next chord during its final beat.
+      const leaving = Math.max(0, 1 - (e.end - pos))
+      x = nowX - leaving * ppb
+      alpha = 1 - leaving * 0.85
+    } else {
+      x = nowX + (e.start - pos) * ppb
+      // The next chord waits at the right edge until its approach brings it on screen.
+      if (isNext) x = Math.min(x, g.w - w - 4)
+      else if (x > g.w) continue
+    }
+    const y0 = mid - h / 2
+    const result = v.results.get(e.abs)
+    const live = playing // in idle the strip just previews the song
+
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = isCurrent && live ? color('--card-now') : color('--card')
+    roundRect(ctx, x, y0, w, h, 10)
     ctx.fill()
-    ctx.strokeStyle = current ? color('--accent') : color('--card-edge')
-    ctx.lineWidth = current ? 2 : 1
+    ctx.strokeStyle = isCurrent ? color('--accent') : isNext ? color('--accent-3') : color('--card-edge')
+    ctx.lineWidth = isCurrent || isNext ? 2 : 1
+    if (isNext && live) {
+      ctx.shadowColor = color('--accent')
+      ctx.shadowBlur = 18
+    }
     ctx.stroke()
+    ctx.shadowBlur = 0
     if (result) {
       ctx.fillStyle = color(GRADE_VAR[result.grade])
-      roundRect(ctx, x0 + 4, bottom - 7, Math.max(0, x1 - x0 - 8), 4, 2)
+      roundRect(ctx, x + 4, y0 + h - 7, w - 8, 4, 2)
       ctx.fill()
     }
 
     ctx.save()
     ctx.beginPath()
-    ctx.rect(x0, top, x1 - x0, bottom - top)
+    ctx.rect(x, y0, w, h)
     ctx.clip()
-    ctx.fillStyle = current ? color('--card-now-text') : color('--text')
-    const size = Math.min(current ? (compact ? 28 : 34) : compact ? 18 : 22, (bottom - top) * (current ? 0.62 : 0.48))
-    ctx.font = `italic 700 ${size * 1.15}px 'Barlow Condensed', system-ui, sans-serif`
+    const ink = isCurrent && live ? color('--card-now-text') : color('--text')
+    const tagSize = compact ? 10 : 11
+    const tagged = live && (isCurrent || isNext)
+    if (tagged) {
+      const untilStart = Math.ceil(e.start - pos)
+      const tag = isCurrent ? 'NOW' : untilStart >= 1 && untilStart <= 4 ? `NEXT · IN ${untilStart}` : 'NEXT'
+      ctx.font = `700 ${tagSize}px 'Barlow Condensed', system-ui, sans-serif`
+      ctx.fillStyle = isCurrent ? ink : color('--accent-3')
+      ctx.textBaseline = 'top'
+      ctx.textAlign = 'left'
+      ctx.fillText(tag, x + 8, y0 + 4)
+    }
+    const size = Math.min(compact ? 30 : 38, h * 0.56) * (tagged ? 0.92 : 1)
+    ctx.fillStyle = ink
+    ctx.font = `italic 700 ${size}px 'Barlow Condensed', system-ui, sans-serif`
     ctx.textBaseline = 'middle'
-    ctx.textAlign = 'left'
-    ctx.fillText(e.chord.name, x0 + 10, (top + bottom) / 2 - 2)
+    ctx.fillText(e.chord.name, x + 9, mid + (tagged ? tagSize * 0.5 : 0))
+    // Beat dots on the current card: how many of its beats have gone by.
+    if (isCurrent && live) {
+      const beats = e.end - e.start
+      const r = compact ? 3 : 3.5
+      for (let b = 0; b < beats; b++) {
+        ctx.beginPath()
+        ctx.arc(x + w - 10 - (beats - 1 - b) * (r * 2.6), y0 + 10, r, 0, Math.PI * 2)
+        ctx.fillStyle = pos >= e.start + b ? ink : 'rgba(20, 12, 0, 0.25)'
+        ctx.fill()
+      }
+    }
     ctx.restore()
     ctx.globalAlpha = 1
   }

@@ -15,10 +15,11 @@ const FRAMES_PER_SECOND = MODEL_SAMPLE_RATE / 256
 /** Lowest MIDI note the model reports (A0); it reports 88 notes. */
 const LOWEST_MIDI = 21
 /**
- * A note counts as sounding at or above this activation (0..1). Tuned on synthetic strums:
- * 0.2 balanced missed strings against invented ones best; real guitars may differ.
+ * A note counts as sounding at or above this activation (0..1). Defaults to the lab's strictest
+ * setting: fewer invented strings, at the cost of missing quiet ones (0.2 balanced the two best
+ * on synthetic strums).
  */
-export const NOTE_ON = 0.2
+export const NOTE_ON = 0.5
 
 export interface NoteReading {
   /** Activation (0..1) per MIDI note, index = MIDI number */
