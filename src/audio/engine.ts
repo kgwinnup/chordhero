@@ -1,4 +1,4 @@
-import { type Chord, chordPitchClasses, midiToFreq, stringMidi } from '../music/chords'
+import { type Chord, chordPitchClasses, midiToFreq, NOTE_NAMES, stringMidi } from '../music/chords'
 
 export interface Analysis {
   /** RMS of the most recent ~40ms of input, 0..1 */
@@ -29,17 +29,33 @@ const SHARED_OVERTONES = [1, 2, 3, 4]
 const GATE_RMS = 0.006
 const HOLD_SECONDS = 0.25 // keep a string lit briefly so it doesn't flicker
 
+export interface MicInfo {
+  contextRate: number
+  micRate: number | null
+  /** Newer browsers may report a mode string here instead of a boolean. */
+  echoCancellation: boolean | string | null
+  autoGainControl: boolean | null
+  noiseSuppression: boolean | null
+}
+
+export interface Pitch {
+  freq: number
+  note: string
+  /** How far off the nearest note, −50…50 */
+  cents: number
+}
+
 export class AudioEngine {
-  readonly ctx: AudioContext
-  private analyser: AnalyserNode
+  private _ctx!: AudioContext
+  private analyser!: AnalyserNode
   /** Everything connected here gets analysed */
-  private input: GainNode
+  private input!: GainNode
   /** Everything connected here goes to the speakers */
-  private output: GainNode
+  private output!: GainNode
   private micSource: MediaStreamAudioSourceNode | null = null
   private micStream: MediaStream | null = null
-  private freqData: Float32Array<ArrayBuffer>
-  private timeData: Float32Array<ArrayBuffer>
+  private freqData!: Float32Array<ArrayBuffer>
+  private timeData!: Float32Array<ArrayBuffer>
   private ringAt: number[] = new Array(6).fill(-Infinity)
   private ringChordId: string | null = null
   private rmsHistory: { t: number; v: number }[] = []
@@ -48,7 +64,19 @@ export class AudioEngine {
   clickVolume = 0.5
 
   constructor() {
-    this.ctx = new AudioContext({ latencyHint: 'interactive' })
+    this.build()
+  }
+
+  get ctx() {
+    return this._ctx
+  }
+
+  private build(sampleRate?: number) {
+    try {
+      this._ctx = new AudioContext({ latencyHint: 'interactive', sampleRate })
+    } catch {
+      this._ctx = new AudioContext({ latencyHint: 'interactive' })
+    }
     this.analyser = this.ctx.createAnalyser()
     this.analyser.fftSize = FFT_SIZE
     this.analyser.smoothingTimeConstant = 0.3
@@ -60,6 +88,17 @@ export class AudioEngine {
     this.output.connect(this.ctx.destination)
     this.freqData = new Float32Array(this.analyser.frequencyBinCount)
     this.timeData = new Float32Array(this.analyser.fftSize)
+  }
+
+  /** Swap in a fresh AudioContext (and graph), dropping anything tied to the old one. */
+  private rebuild(sampleRate?: number) {
+    const old = this._ctx
+    this.build(sampleRate)
+    old.close().catch(() => {})
+    this.strumCache.clear()
+    this.rmsHistory = []
+    this.ringAt.fill(-Infinity)
+    this.lastOnsetAt = -Infinity
   }
 
   get micActive() {
@@ -82,9 +121,68 @@ export class AudioEngine {
         autoGainControl: false,
       },
     })
+    // iOS switches the hardware sample rate when the mic opens, and an AudioContext made
+    // before that keeps the old rate: every pitch then reads ~1.5 semitones off. So build
+    // the audio graph again now that the mic is live, at the mic's own rate.
+    this.rebuild(this.micStream.getAudioTracks()[0]?.getSettings().sampleRate)
+    await this.resume().catch(() => {})
     this.micSource = this.ctx.createMediaStreamSource(this.micStream)
     this.micSource.connect(this.input)
   }
+
+  /** What the browser actually gave us, for the mic check. */
+  micInfo(): MicInfo {
+    const settings = this.micStream?.getAudioTracks()[0]?.getSettings()
+    return {
+      contextRate: this.ctx.sampleRate,
+      micRate: settings?.sampleRate ?? null,
+      echoCancellation: settings?.echoCancellation ?? null,
+      autoGainControl: settings?.autoGainControl ?? null,
+      noiseSuppression: settings?.noiseSuppression ?? null,
+    }
+  }
+
+  /**
+   * The pitch of a single plucked string, from the latest input (call after `analyze`).
+   * Uses YIN on the waveform: unlike picking the loudest spectral peak, it isn't fooled
+   * into octave errors by a guitar's strong overtones. Null when it's quiet or unclear.
+   */
+  pitch(): Pitch | null {
+    const sr = this.ctx.sampleRate
+    const W = 2048
+    const x = this.timeData.subarray(this.timeData.length - W * 2)
+    let energy = 0
+    for (let i = W; i < W * 2; i++) energy += x[i] * x[i]
+    if (Math.sqrt(energy / W) < 0.003) return null
+
+    const minTau = Math.floor(sr / 1100)
+    const maxTau = Math.min(W - 1, Math.ceil(sr / 70))
+    // Cumulative-mean-normalised difference function.
+    const d = new Float32Array(maxTau + 1)
+    let running = 0
+    let tau = -1
+    for (let t = 1; t <= maxTau; t++) {
+      let sum = 0
+      for (let i = 0; i < W; i++) {
+        const diff = x[i] - x[i + t]
+        sum += diff * diff
+      }
+      running += sum
+      d[t] = running ? (sum * t) / running : 1
+      if (t > minTau + 1 && d[t - 1] < 0.15 && d[t - 1] <= d[t] && d[t - 1] <= d[t - 2]) {
+        tau = t - 1
+        break
+      }
+    }
+    if (tau < 0) return null
+    const [a, m, c] = [d[tau - 1], d[tau], d[tau + 1]]
+    const shift = a + c - 2 * m === 0 ? 0 : (0.5 * (a - c)) / (a - 2 * m + c)
+    const freq = sr / (tau + shift)
+    const midi = 69 + 12 * Math.log2(freq / 440)
+    const nearest = Math.round(midi)
+    return { freq, note: `${NOTE_NAMES[((nearest % 12) + 12) % 12]}${Math.floor(nearest / 12) - 1}`, cents: Math.round((midi - nearest) * 100) }
+  }
+
 
   disableMic() {
     this.micSource?.disconnect()

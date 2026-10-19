@@ -1,4 +1,6 @@
+import type { AudioEngine } from '../audio/engine'
 import type { Settings } from '../game/useGame'
+import { MicCheck } from './MicCheck'
 
 interface Props {
   settings: Settings
@@ -9,9 +11,11 @@ interface Props {
   deviceId: string
   onDevice: (id: string) => void
   onClose: () => void
+  engine: AudioEngine
+  micOn: boolean
 }
 
-export function SettingsSheet({ settings, set, running, onDemo, devices, deviceId, onDevice, onClose }: Props) {
+export function SettingsSheet({ settings, set, running, onDemo, devices, deviceId, onDevice, onClose, engine, micOn }: Props) {
   return (
     <div className="results-backdrop sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -54,6 +58,7 @@ export function SettingsSheet({ settings, set, running, onDemo, devices, deviceI
               ))}
             </select>
           )}
+          {micOn && <MicCheck engine={engine} />}
           <Toggle label="Demo mode" hint="No guitar: the app strums for you" checked={settings.testMode} onChange={onDemo} disabled={running} />
         </div>
 

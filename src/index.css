@@ -1252,3 +1252,74 @@ h3 {
     left: 13px;
   }
 }
+
+/* Mic check */
+.mic-check {
+  margin: 8px 0 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #0c0c0e;
+  box-shadow: var(--trim);
+}
+.tuner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 12px;
+}
+.tuner-note {
+  font-family: var(--font-chord);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 1;
+}
+.tuner-hz {
+  font-size: 17px;
+  color: var(--muted);
+}
+.tuner-scale {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 10px;
+  margin-top: 8px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--red), var(--accent-3) 40%, var(--green) 50%, var(--accent-3) 60%, var(--red));
+  opacity: 0.85;
+}
+.tuner-scale i {
+  position: absolute;
+  top: -4px;
+  width: 4px;
+  height: 18px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 6px #000;
+  transition: left 120ms;
+}
+.tuner-scale i.in-tune {
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green);
+}
+.sheet-hint {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.mic-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 10px 0 0;
+  font-size: 14px;
+}
+.mic-facts dt {
+  color: var(--muted);
+}
+.mic-facts dd {
+  margin: 0;
+}
+.mic-facts dd.warn {
+  color: var(--accent-3);
+}

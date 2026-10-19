@@ -201,7 +201,7 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
         next = lay.items[1]?.chord ?? null
       } else {
         const bps = s.bpm / 60
-        const dt = Math.min(now - st.lastT, 0.1)
+        const dt = Math.max(0, Math.min(now - st.lastT, 0.1)) // ≥ 0: the audio clock restarts if the mic rebuilds it
         st.lastT = now
         let pos = v.pos + dt * bps
 

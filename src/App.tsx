@@ -100,6 +100,14 @@ export default function App() {
     setEditing(null)
   }
 
+  // Mobile browsers only let audio start from a tap; resume on any tap in case the
+  // engine was rebuilt (after the mic opened) outside one.
+  useEffect(() => {
+    const unlock = () => void engine.resume().catch(() => {})
+    document.addEventListener('pointerdown', unlock)
+    return () => document.removeEventListener('pointerdown', unlock)
+  }, [engine])
+
   const set = <K extends keyof Settings>(k: K, value: Settings[K]) => setSettings((s) => ({ ...s, [k]: value }))
 
   const enableMic = async (id = deviceId) => {
@@ -241,6 +249,8 @@ export default function App() {
           deviceId={deviceId}
           onDevice={changeDevice}
           onClose={() => setSettingsOpen(false)}
+          engine={engine}
+          micOn={mic === 'on'}
         />
       )}
 
