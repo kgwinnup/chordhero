@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
+import { headstockGeometry } from '../music/headstock'
 import { centsOff, type HeadstockLayout, INSTRUMENTS, INSTRUMENTS_BY_ID, IN_TUNE_CENTS, noteLabel, searchRange, tuneHint } from '../music/tunings'
 
 interface Props {
@@ -222,50 +223,6 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
   )
 }
 
-/** Peg positions (string post, tuning button) for each string, plus the headstock outline. */
-function geometry(layout: HeadstockLayout, n: number) {
-  const nutY = 410
-  const left = { post: 112, button: 46 }
-  const right = { post: 208, button: 274 }
-  switch (layout) {
-    case 'three-a-side': {
-      // Strings fan out: the outer strings go to the pegs farthest from the nut.
-      const rows = [110, 200, 290]
-      return {
-        outline: 'M108 412 L98 332 Q70 210 74 86 Q94 38 160 46 Q226 38 246 86 Q250 210 222 332 L212 412 Z',
-        pegs: Array.from({ length: n }, (_, i) =>
-          i < 3 ? { x: left.post, y: rows[i], bx: left.button } : { x: right.post, y: rows[5 - i], bx: right.button },
-        ),
-        nutY,
-      }
-    }
-    case 'two-a-side': {
-      const rows = [170, 280]
-      return {
-        outline: 'M114 412 L106 340 Q88 230 96 150 Q116 104 160 108 Q204 104 224 150 Q232 230 214 340 L206 412 Z',
-        pegs: Array.from({ length: n }, (_, i) =>
-          i < 2 ? { x: left.post + 6, y: rows[i], bx: left.button + 6 } : { x: right.post - 6, y: rows[3 - i], bx: right.button - 6 },
-        ),
-        nutY,
-      }
-    }
-    case 'six-in-line':
-    case 'four-in-line': {
-      // All pegs on the bass side; the low string's peg is nearest the nut.
-      const top = layout === 'six-in-line' ? 96 : 130
-      const step = (330 - top) / (n - 1)
-      return {
-        outline:
-          layout === 'six-in-line'
-            ? 'M110 412 L104 372 Q74 334 80 270 L86 112 Q92 62 140 56 Q206 50 232 86 Q244 108 218 128 Q182 150 194 206 L212 412 Z'
-            : 'M110 412 L104 370 Q76 330 82 262 L88 140 Q94 92 140 86 Q200 82 222 112 Q232 132 210 150 Q184 172 194 220 L212 412 Z',
-        pegs: Array.from({ length: n }, (_, i) => ({ x: left.post + 8, y: 330 - i * step, bx: left.button })),
-        nutY,
-      }
-    }
-  }
-}
-
 function Headstock({
   layout,
   notes,
@@ -279,11 +236,9 @@ function Headstock({
   tuned: Set<number>
   onPick: (i: number) => void
 }) {
-  const n = notes.length
-  const g = geometry(layout, n)
-  const nutLeft = 120
-  const nutWidth = 80
-  const stringX = (i: number) => nutLeft + ((i + 0.5) * nutWidth) / n
+  const g = headstockGeometry(layout, notes.length)
+  const nutLeft = Math.min(...g.nutX) - 6
+  const nutWidth = Math.max(...g.nutX) - Math.min(...g.nutX) + 12
   return (
     <svg viewBox="0 0 320 444" className="headstock" role="img" aria-label="Headstock">
       <defs>
@@ -299,20 +254,20 @@ function Headstock({
         </radialGradient>
       </defs>
       {/* Neck below the nut */}
-      <rect x={nutLeft - 6} y={g.nutY} width={nutWidth + 12} height={40} fill="#141110" />
+      <rect x={nutLeft - 8} y={g.nutY} width={nutWidth + 16} height={40} fill="#141110" />
       <path d={g.outline} fill="url(#hs-wood)" stroke="#3a3a42" strokeWidth="2" />
-      <rect x={nutLeft - 4} y={g.nutY - 4} width={nutWidth + 8} height={8} rx="2" fill="#efe9da" />
+      <rect x={nutLeft - 6} y={g.nutY - 4} width={nutWidth + 12} height={8} rx="2" fill="#efe9da" />
       {g.pegs.map((p, i) => {
         const active = i === current
         const done = tuned.has(i)
         return (
           <g key={i} className={`peg ${active ? 'active' : ''} ${done ? 'done' : ''}`} onClick={() => onPick(i)} role="button" aria-label={`String ${i + 1}, ${noteLabel(notes[i])}`}>
-            <line x1={stringX(i)} y1={g.nutY + 40} x2={stringX(i)} y2={g.nutY} className="peg-string" />
-            <line x1={stringX(i)} y1={g.nutY} x2={p.x} y2={p.y} className="peg-string" />
-            <line x1={p.x} y1={p.y} x2={p.bx + (p.bx < p.x ? 22 : -22)} y2={p.y} className="peg-shaft" />
+            <line x1={g.nutX[i]} y1={g.nutY + 40} x2={g.nutX[i]} y2={g.nutY} className="peg-string" />
+            <line x1={g.nutX[i]} y1={g.nutY} x2={p.x} y2={p.y} className="peg-string" />
+            <line x1={p.x} y1={p.y} x2={p.buttonX + (p.buttonX < p.x ? 22 : -22)} y2={p.y} className="peg-shaft" />
             <circle cx={p.x} cy={p.y} r="9" fill="url(#hs-chrome)" />
-            <rect x={p.bx - 22} y={p.y - 17} width="44" height="34" rx="14" className="peg-button" />
-            <text x={p.bx} y={p.y + 6} className="peg-label">
+            <rect x={p.buttonX - 22} y={p.y - 17} width="44" height="34" rx="14" className="peg-button" />
+            <text x={p.buttonX} y={p.y + 6} className="peg-label">
               {done ? '✓' : noteLabel(notes[i]).replace(/\d+$/, '')}
             </text>
           </g>
