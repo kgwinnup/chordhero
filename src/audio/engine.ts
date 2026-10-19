@@ -24,8 +24,20 @@ const LOCAL_FLOOR_SPAN = Math.SQRT2
 /** Bass strings get this much slack: even with a local floor, built-in mics hear them least clearly. */
 const BASS_RELIEF_DB = 4
 const BASS_BELOW_HZ = 130
-/** Overtones of the other strings that an overtone must not coincide with to count. */
-const SHARED_OVERTONES = [1, 2, 3, 4]
+/**
+ * When a string's note could be an overtone of a lower string that's sounding, it only counts
+ * if it stands this far above the loudest of that string's other overtones around it.
+ */
+const OVERTONE_EXCESS_DB = 6
+/**
+ * A lower string this far above the noise counts as a possible source of overtones even before
+ * it lights: early in a pluck its overtones are already strong while its own note is still rising.
+ */
+const SOURCE_PRESENT_DB = 6
+/** Above this spectral flatness the sound is noise-like (key clicks, taps, rustle), not strings. */
+const MAX_FLATNESS = 0.3
+/** Consecutive frames a string must read as ringing before it lights. */
+const PERSIST_FRAMES = 2
 const GATE_RMS = 0.006
 const HOLD_SECONDS = 0.25 // keep a string lit briefly so it doesn't flicker
 
@@ -57,6 +69,9 @@ export class AudioEngine {
   private freqData!: Float32Array<ArrayBuffer>
   private timeData!: Float32Array<ArrayBuffer>
   private ringAt: number[] = new Array(6).fill(-Infinity)
+  /** Per string: consecutive frames it has read as ringing, and whether it had its own evidence last frame. */
+  private streak: number[] = new Array(6).fill(0)
+  private wasIndependent: boolean[] = new Array(6).fill(false)
   private ringChordId: string | null = null
   private rmsHistory: { t: number; v: number }[] = []
   private strumCache = new Map<string, AudioBuffer>()
@@ -291,7 +306,10 @@ export class AudioEngine {
     if (chord?.id !== this.ringChordId) {
       this.ringChordId = chord?.id ?? null
       this.ringAt.fill(-Infinity)
+      this.streak.fill(0)
+      this.wasIndependent.fill(false)
     }
+    const tonal = this.flatness(toBin(70), toBin(3000)) < MAX_FLATNESS
 
     const strings = new Array<boolean>(6).fill(false)
     const scores = new Array<number>(6).fill(0)
@@ -303,25 +321,68 @@ export class AudioEngine {
         return m === null ? null : midiToFreq(m)
       })
       const near = (a: number, b: number) => a / b < TOLERANCE && b / a < TOLERANCE
+      /** Is `hf` (close to) some overtone of the note `g`? Returns which one, or 0. */
+      const overtoneOf = (hf: number, g: number) => {
+        const k = Math.round(hf / g)
+        return k >= 1 && near(k * g, hf) ? k : 0
+      }
+      /** How far a partial stands above the noise around it; immune to the mic's bass rolloff. */
+      const contrast = (f: number) => peak(f) - localFloor(f)
+      const ringingNow = new Array<boolean>(6).fill(false)
+      const present = new Array<boolean>(6).fill(false)
+      // Strings whose evidence is their own: a peak no sounding lower string explains, or one
+      // that clearly stands out from that string's overtones. Only these may claim neighbouring
+      // overtones as theirs; strings lit on the benefit of the doubt can't vouch for each other.
+      const independentNow = new Array<boolean>(6).fill(false)
+      const vouches = (o: number) => independentNow[o] || this.wasIndependent[o]
 
-      for (let s = 0; s < 6; s++) {
-        const f = expected[s]
-        if (f === null) continue
+      // Decide strings from low to high pitch, so a higher string's note can be checked against
+      // the overtones of lower strings already known to be sounding.
+      const order = expected.map((f, i) => ({ f, i })).filter((x) => x.f !== null).sort((a, b) => a.f! - b.f!)
+      for (const { f: fNote, i: s } of order) {
+        const f = fNote!
         let best = -Infinity
+        let bestOwn = -Infinity
         for (let h = 1; h < HARMONIC_PENALTY.length; h++) {
           const hf = h * f
           if (hf > 2500) break
-          // An overtone that lands on another string's note (or one of its first overtones)
-          // proves nothing about this string. Unshared ones, like the low E's 5th in Em,
-          // still give a bass string a voice when the mic barely hears its fundamental.
-          if (h > 1 && expected.some((g, o) => o !== s && g !== null && SHARED_OVERTONES.some((k) => near(k * g, hf)))) continue
-          best = Math.max(best, peak(hf) - localFloor(hf) - HARMONIC_PENALTY[h])
+          let usable = true
+          let own = true
+          for (let o = 0; o < 6 && usable; o++) {
+            const g = expected[o]
+            if (o === s || g === null) continue
+            const k = overtoneOf(hf, g)
+            if (!k) continue
+            if (g >= f) {
+              // Our overtone sits on a higher string's note or overtone: it proves nothing about us.
+              if (h > 1) usable = false
+            } else if (present[o] || ringingNow[o]) {
+              // A lower string that's sounding could have made this peak. Count it only if it stands
+              // out from that string's own overtone envelope: all its overtones up to two past this one
+              // (a low E's 2nd overtone is often its loudest), skipping any another string claims.
+              const neighbours = Array.from({ length: k + 2 }, (_, n) => n + 1)
+                .filter((n) => n !== k && n * g <= 2500)
+                .map((n) => n * g)
+                .filter((nf) => !expected.some((g2, o2) => o2 !== o && o2 !== s && g2 !== null && vouches(o2) && overtoneOf(nf, g2)))
+              if (!neighbours.length) own = false // nothing to compare against: benefit of the doubt
+              else if (contrast(hf) - Math.max(...neighbours.map(contrast)) < OVERTONE_EXCESS_DB) usable = false
+            }
+          }
+          if (!usable) continue
+          const score = contrast(hf) - HARMONIC_PENALTY[h]
+          best = Math.max(best, score)
+          if (own) bestOwn = Math.max(bestOwn, score)
         }
         scores[s] = best
+        present[s] = best > SOURCE_PRESENT_DB
         const need = threshold - (f < BASS_BELOW_HZ ? BASS_RELIEF_DB : 0)
-        if (gate && best > need) this.ringAt[s] = now
+        ringingNow[s] = gate && tonal && best > need
+        independentNow[s] = gate && tonal && bestOwn > need
+        this.streak[s] = ringingNow[s] ? this.streak[s] + 1 : 0
+        if (this.streak[s] >= PERSIST_FRAMES) this.ringAt[s] = now
         strings[s] = now - this.ringAt[s] < HOLD_SECONDS
       }
+      this.wasIndependent = independentNow
 
       if (gate) match = this.chromaMatch(chord, floor, binHz)
     }
@@ -348,6 +409,19 @@ export class AudioEngine {
       if (pcs.has(pc)) dot += v
     })
     return norm > 0 ? dot / (Math.sqrt(norm) * Math.sqrt(pcs.size)) : 0
+  }
+
+  /** Spectral flatness (0 = pure tones … 1 = white noise) over a bin range. */
+  private flatness(lo: number, hi: number) {
+    let logSum = 0
+    let sum = 0
+    for (let b = lo; b < hi; b++) {
+      const db = this.freqData[b]
+      logSum += db * (Math.LN10 / 10)
+      sum += Math.pow(10, db / 10)
+    }
+    const n = hi - lo
+    return sum > 0 ? Math.exp(logSum / n) / (sum / n) : 1
   }
 
   private median(lo: number, hi: number) {
