@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14c9a6"/>
+      <stop offset="1" stop-color="#2a55d6"/>
+    </linearGradient>
+    <filter id="shadow" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0b1a4a" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <path d="M256 92 C350 92 412 120 412 176 C412 266 328 372 256 420 C184 372 100 266 100 176 C100 120 162 92 256 92 Z" fill="#ffffff" filter="url(#shadow)"/>
+  <!-- a tiny chord diagram printed on the pick -->
+  <g stroke="#c9d2e3" stroke-width="5" stroke-linecap="round">
+    <line x1="196" y1="150" x2="316" y2="150" stroke="#1f2b4a" stroke-width="9"/>
+    <line x1="196" y1="200" x2="316" y2="200"/><line x1="196" y1="250" x2="316" y2="250"/><line x1="206" y1="300" x2="306" y2="300"/>
+    <line x1="196" y1="150" x2="196" y2="300"/><line x1="236" y1="150" x2="236" y2="320"/>
+    <line x1="276" y1="150" x2="276" y2="320"/><line x1="316" y1="150" x2="316" y2="300"/>
+  </g>
+  <g fill="#ff5a5f">
+    <circle cx="236" cy="175" r="17"/><circle cx="276" cy="225" r="17"/><circle cx="196" cy="225" r="17"/>
+  </g>
+</svg>

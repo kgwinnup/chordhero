@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="ebony" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0908"/>
+      <stop offset="0.5" stop-color="#241d19"/>
+      <stop offset="1" stop-color="#0b0908"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#b8180e"/>
+      <stop offset="0.45" stop-color="#ff7a18"/>
+      <stop offset="0.85" stop-color="#ffd84d"/>
+      <stop offset="1" stop-color="#fff2b0"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ff7a18"/>
+      <stop offset="1" stop-color="#fff6c8"/>
+    </linearGradient>
+    <!-- userSpaceOnUse: a horizontal line has a zero-height bounding box -->
+    <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="#070707"/>
+  <!-- flame tongues rising from below the neck, with dark gaps between them -->
+  <path d="M0 512 L0 430 Q16 388 28 352 Q44 404 66 424 Q86 368 106 334 Q122 392 148 422 Q170 372 188 344 Q204 400 228 424 Q250 364 264 330 Q278 392 302 424 Q324 374 342 346 Q356 402 382 424 Q404 372 422 338 Q436 394 458 424 Q478 376 494 352 Q504 384 512 404 L512 512 Z" fill="url(#flame)"/>
+  <rect x="0" y="92" width="512" height="230" fill="url(#ebony)"/>
+  <rect x="0" y="88" width="512" height="6" fill="#efe9da"/>
+  <rect x="0" y="320" width="512" height="6" fill="#efe9da"/>
+  <g fill="#c4c4cc"><rect x="146" y="92" width="9" height="230"/><rect x="356" y="92" width="9" height="230"/></g>
+  <g stroke="#c9c9d0">
+    <line x1="0" y1="112" x2="512" y2="112" stroke-width="2.5"/><line x1="0" y1="150" x2="512" y2="150" stroke-width="3"/>
+    <line x1="0" y1="188" x2="512" y2="188" stroke-width="3.5"/><line x1="0" y1="264" x2="512" y2="264" stroke-width="5"/>
+    <line x1="0" y1="302" x2="512" y2="302" stroke-width="6"/>
+  </g>
+  <line x1="0" y1="226" x2="512" y2="226" stroke="#7dff6a" stroke-width="9" filter="url(#glow)"/>
+  <circle cx="256" cy="226" r="26" fill="#ff7a18" stroke="#1a0700" stroke-width="5" filter="url(#glow)"/>
+  <!-- bright inner flames in front -->
+  <path d="M70 512 C78 480 100 470 104 440 C118 466 134 480 130 512 Z M224 512 C230 470 254 456 258 418 C276 454 292 480 288 512 Z M380 512 C386 478 408 466 412 434 C428 466 444 484 440 512 Z" fill="url(#inner)" opacity="0.9"/>
+</svg>

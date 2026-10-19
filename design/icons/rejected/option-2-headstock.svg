@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="70%">
+      <stop offset="0" stop-color="#2a1a10"/>
+      <stop offset="1" stop-color="#070707"/>
+    </radialGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0c0b0b"/>
+      <stop offset="0.5" stop-color="#2a2522"/>
+      <stop offset="1" stop-color="#0c0b0b"/>
+    </linearGradient>
+    <radialGradient id="post" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#b9b9c2"/>
+      <stop offset="1" stop-color="#4a4a52"/>
+    </radialGradient>
+    <radialGradient id="peg" cx="40%" cy="35%" r="65%">
+      <stop offset="0" stop-color="#ffe066"/>
+      <stop offset="0.5" stop-color="#ff7a18"/>
+      <stop offset="1" stop-color="#a8240c"/>
+    </radialGradient>
+    <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <path d="M206 470 L196 392 Q166 262 172 128 Q192 74 256 82 Q320 74 340 128 Q346 262 316 392 L306 470 Z" fill="url(#wood)" stroke="#55555e" stroke-width="5"/>
+  <rect x="202" y="384" width="108" height="14" rx="3" fill="#efe9da"/>
+  <!-- shafts from the tuning buttons to the posts -->
+  <g stroke="#9a9aa4" stroke-width="8">
+    <line x1="150" y1="150" x2="214" y2="150"/><line x1="146" y1="236" x2="208" y2="236"/><line x1="150" y1="322" x2="214" y2="322"/>
+    <line x1="362" y1="150" x2="298" y2="150"/><line x1="366" y1="236" x2="304" y2="236"/><line x1="362" y1="322" x2="298" y2="322"/>
+  </g>
+  <!-- strings from the nut to the posts -->
+  <g stroke="#e6e6ea" stroke-width="2.5">
+    <line x1="221" y1="384" x2="214" y2="322"/><line x1="235" y1="384" x2="208" y2="236"/><line x1="249" y1="384" x2="214" y2="150"/>
+    <line x1="263" y1="384" x2="298" y2="150"/><line x1="277" y1="384" x2="304" y2="236"/><line x1="291" y1="384" x2="298" y2="322"/>
+  </g>
+  <g fill="url(#post)" stroke="#111" stroke-width="3">
+    <circle cx="214" cy="150" r="11"/><circle cx="208" cy="236" r="11"/><circle cx="214" cy="322" r="11"/>
+    <circle cx="298" cy="150" r="11"/><circle cx="304" cy="236" r="11"/><circle cx="298" cy="322" r="11"/>
+  </g>
+  <g filter="url(#glow)" stroke="#1a0700" stroke-width="4" fill="url(#peg)">
+    <rect x="96" y="130" width="60" height="40" rx="18"/><rect x="90" y="216" width="60" height="40" rx="18"/><rect x="96" y="302" width="60" height="40" rx="18"/>
+    <rect x="356" y="130" width="60" height="40" rx="18"/><rect x="362" y="216" width="60" height="40" rx="18"/><rect x="356" y="302" width="60" height="40" rx="18"/>
+  </g>
+</svg>

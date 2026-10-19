@@ -12,6 +12,17 @@ A Simply Guitar–style chord trainer that runs entirely in the browser. Build a
 - **Mic check.** You enable the mic and strum once to confirm it hears you. *Watch a demo* plays the game for you without a guitar.
 - Works on phones (upright or sideways) and desktop. Settings and presets are saved in your browser.
 
+## Install it like an app
+
+ChordHero is an installable web app: it gets its own icon, opens full-screen, and works offline
+(after the first launch).
+
+- **iPhone / iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen**.
+- **Android:** open it in Chrome and tap **Install app** (or menu ⋮ → **Add to Home screen**).
+
+The app icon comes from one of the designs in `design/icons/` (see `design/icons/options.png`; the app uses option 7, soundhole play).
+To switch, run `node scripts/icons.mjs <number>`.
+
 ## Develop
 
 ```bash
