@@ -1,19 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AudioEngine } from './audio/engine'
 import { Fretboard } from './components/Fretboard'
 import { Highway } from './components/Highway'
+import { JudgmentPopup, Results, ScoreHud } from './components/Hud'
+import { MicGate } from './components/MicGate'
+import { SettingsSheet } from './components/SettingsSheet'
+import { useMediaQuery } from './hooks/useMediaQuery'
 import { SequenceBuilder } from './components/SequenceBuilder'
 import { newKey, type SeqItem, type Settings, useGame } from './game/useGame'
 import { CHORDS_BY_ID } from './music/chords'
 
 const DEFAULT_SETTINGS: Settings = {
   bpm: 70,
-  waitMode: true,
+  waitMode: false,
   loop: true,
   metronome: true,
   countIn: true,
   sensitivity: 50,
   testMode: false,
+  highway: 'auto',
 }
 
 const DEFAULT_SEQ: SeqItem[] = ['G', 'C', 'D', 'G'].map((chordId) => ({ key: newKey(), chordId, beats: 4 }))
@@ -47,7 +52,7 @@ function save(key: string, value: unknown) {
 
 export default function App() {
   const [engine] = useState(() => new AudioEngine())
-  const [settings, setSettings] = useState<Settings>(() => load('chordlight.settings', DEFAULT_SETTINGS))
+  const [settings, setSettings] = useState<Settings>(() => ({ ...load('chordlight.settings', DEFAULT_SETTINGS), testMode: false }))
   const [seq, setSeq] = useState<SeqItem[]>(loadSeq)
   const [defaultBeats, setDefaultBeats] = useState(() => load('chordlight.prefs', { defaultBeats: 4 }).defaultBeats)
   const [preview, setPreview] = useState<string | null>(null)
@@ -55,9 +60,27 @@ export default function App() {
   const [micError, setMicError] = useState('')
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceId] = useState('')
+  /** The mic has heard the guitar during the setup check. */
+  const [micReady, setMicReady] = useState(false)
 
   const { layout, view, phase, score, ui, start, stop } = useGame(engine, seq, settings, preview)
   const running = phase === 'countin' || phase === 'playing'
+  const [results, setResults] = useState<{ best: number; isNewBest: boolean } | null>(null)
+  const prevPhase = useRef(phase)
+
+  // Show results when a song finishes, or when it's stopped after playing something.
+  const showResults = () => {
+    if (!score.judged) return
+    const key = `${seq.map((it) => `${it.chordId}:${it.beats}`).join(',')}@${settings.bpm}${settings.waitMode ? 'w' : ''}`
+    const bests = load<Record<string, number>>('chordlight.best', {})
+    const prev = bests[key] ?? 0
+    if (score.points > prev) save('chordlight.best', { ...bests, [key]: score.points })
+    setResults({ best: Math.max(prev, score.points), isNewBest: score.points > prev && score.points > 0 })
+  }
+  useEffect(() => {
+    if (phase === 'done' && prevPhase.current !== 'done') showResults()
+    prevPhase.current = phase
+  })
 
   useEffect(() => save('chordlight.settings', settings), [settings])
   useEffect(() => save('chordlight.seq', seq), [seq])
@@ -99,8 +122,15 @@ export default function App() {
     engine.strum(CHORDS_BY_ID[chordId], engine.ctx.currentTime, settings.testMode)
   }
 
-  const total = score.hits + score.misses
   const listening = mic === 'on' || settings.testMode
+  const gateOpen = !settings.testMode && !(mic === 'on' && micReady)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const portraitPhone = useMediaQuery('(orientation: portrait) and (max-width: 640px)')
+  const vertical = settings.highway === 'vertical' || (settings.highway === 'auto' && portraitPhone)
+  const changeDevice = (id: string) => {
+    setDeviceId(id)
+    enableMic(id)
+  }
 
   return (
     <div className="app">
@@ -114,55 +144,68 @@ export default function App() {
         <div className="row">
           <Meter level={ui.level} active={listening} />
           {mic === 'on' ? (
-            <>
-              {devices.length > 1 && (
-                <select
-                  aria-label="Input device"
-                  value={deviceId}
-                  onChange={(e) => {
-                    setDeviceId(e.target.value)
-                    enableMic(e.target.value)
-                  }}
-                >
-                  <option value="">Default mic</option>
-                  {devices.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || 'Microphone'}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <button
-                className="ghost"
-                onClick={() => {
-                  engine.disableMic()
-                  setMic('off')
-                }}
-              >
-                Mic on
-              </button>
-            </>
+            <button
+              className="ghost mic-on"
+              title="Turn the microphone off"
+              onClick={() => {
+                stop()
+                engine.disableMic()
+                setMic('off')
+                setMicReady(false)
+              }}
+            >
+              <span className="live-dot" aria-hidden /> Mic
+            </button>
           ) : (
-            <button className="primary" onClick={() => enableMic()}>
-              🎤 Enable mic
+            <button className="primary" onClick={() => enableMic()} disabled={running}>
+              🎤 {settings.testMode ? 'Use mic' : 'Enable mic'}
             </button>
           )}
+          <button className="icon settings-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+            ⚙
+          </button>
         </div>
       </header>
 
-      {micError && <p className="notice error">{micError}</p>}
-      {!listening && !micError && (
-        <p className="notice">Enable your mic so the app can hear your guitar, or turn on Test mode to try it without one.</p>
+      {gateOpen && (
+        <MicGate
+          micOn={mic === 'on'}
+          error={micError}
+          level={ui.level}
+          onEnable={() => enableMic()}
+          onDemo={() => toggleTestMode(true)}
+          onReady={() => setMicReady(true)}
+          devices={devices}
+          deviceId={deviceId}
+          onDevice={changeDevice}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsSheet
+          settings={settings}
+          set={set}
+          running={running}
+          onDemo={(on) => {
+            toggleTestMode(on)
+            if (!on) setSettingsOpen(false) // the mic popup takes over
+          }}
+          devices={mic === 'on' ? devices : []}
+          deviceId={deviceId}
+          onDevice={changeDevice}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
 
-      <section className="stage">
-        <Highway layout={layout} view={view} loop={settings.loop} />
-        {ui.countdown !== null && <div className="countdown">{ui.countdown}</div>}
-        {phase === 'done' && (
-          <div className="countdown result">
-            {score.hits}/{total}
+      <ScoreHud score={score} />
+
+      <section className={`stage ${vertical ? 'vertical' : ''} ${score.multiplier >= 4 ? 'on-fire' : ''}`}>
+        <Highway layout={layout} view={view} loop={settings.loop} vertical={vertical} />
+        {ui.countdown !== null && (
+          <div className="countdown" key={ui.countdown}>
+            {ui.countdown}
           </div>
         )}
+        {running && <JudgmentPopup judgment={score.last} />}
       </section>
 
       <section className="now">
@@ -173,26 +216,19 @@ export default function App() {
         </div>
         <div className="now-stats">
           <MatchBar value={ui.match} />
-          <div className="score">
-            <span>
-              <b>{score.hits}</b> hit
-            </span>
-            <span>
-              <b>{score.misses}</b> missed
-            </span>
-            <span>
-              <b>{score.streak}</b> streak
-            </span>
-          </div>
         </div>
       </section>
 
-      <section className="panel board">
-        <Fretboard chord={ui.target} ringing={ui.strings} />
-      </section>
-
       <section className="panel transport">
-        <button className={`play ${running ? 'stop' : ''}`} disabled={!layout.items.length} onClick={() => (running ? stop() : start())}>
+        <button className={`play ${running ? 'stop' : ''}`} disabled={!layout.items.length} onClick={() => {
+            if (running) {
+              stop()
+              showResults()
+            } else {
+              setResults(null)
+              start()
+            }
+          }}>
           {running ? '■ Stop' : '▶ Play'}
         </button>
 
@@ -218,20 +254,25 @@ export default function App() {
           </button>
         </div>
 
-        <div className="toggles">
-          <Toggle label="Wait for me" hint="Pauses on each chord until you play it" checked={settings.waitMode} onChange={(v) => set('waitMode', v)} />
-          <Toggle label="Loop" checked={settings.loop} onChange={(v) => set('loop', v)} disabled={running} />
-          <Toggle label="Metronome" checked={settings.metronome} onChange={(v) => set('metronome', v)} />
-          <Toggle label="Count-in" checked={settings.countIn} onChange={(v) => set('countIn', v)} />
-          <Toggle label="Test mode" hint="No mic: the app strums for you" checked={settings.testMode} onChange={toggleTestMode} />
-        </div>
-
-        <label className="sensitivity">
-          <span>Detection: strict</span>
-          <input type="range" min={0} max={100} value={settings.sensitivity} onChange={(e) => set('sensitivity', Number(e.target.value))} />
-          <span>lenient</span>
-        </label>
       </section>
+
+      <section className="panel board">
+        <Fretboard chord={ui.target} ringing={ui.strings} />
+      </section>
+
+
+      {results && (
+        <Results
+          score={score}
+          best={results.best}
+          isNewBest={results.isNewBest}
+          onReplay={() => {
+            setResults(null)
+            start()
+          }}
+          onClose={() => setResults(null)}
+        />
+      )}
 
       <SequenceBuilder
         seq={seq}
@@ -243,16 +284,6 @@ export default function App() {
         disabled={running}
       />
     </div>
-  )
-}
-
-function Toggle({ label, hint, checked, onChange, disabled }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className="toggle" title={hint}>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      <span className="track" aria-hidden />
-      {label}
-    </label>
   )
 }
 

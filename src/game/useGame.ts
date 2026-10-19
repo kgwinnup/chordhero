@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
 import { type Chord, CHORDS_BY_ID } from '../music/chords'
+import { applyJudgment, emptyScore, judge, type Judgment, missJudgment, type ScoreState } from './scoring'
 
 export const newKey = () => Math.random().toString(36).slice(2, 10)
 
@@ -20,10 +21,11 @@ export interface Settings {
   sensitivity: number
   /** Feed synthesized strums to the detector instead of the mic */
   testMode: boolean
+  /** Highway direction; auto = vertical on portrait phones */
+  highway: 'auto' | 'horizontal' | 'vertical'
 }
 
 export type Phase = 'idle' | 'countin' | 'playing' | 'done'
-export type Result = 'hit' | 'miss'
 
 export interface ChordEvent {
   /** Absolute index across loops */
@@ -43,8 +45,10 @@ export interface Layout {
 export interface GameView {
   phase: Phase
   pos: number
-  results: Map<number, Result>
+  results: Map<number, Judgment>
   targetAbs: number | null
+  lastJudgment: Judgment | null
+  multiplier: number
 }
 
 export interface UiState {
@@ -58,7 +62,10 @@ export interface UiState {
 
 /** How early (in beats) a strum may land before a chord's start and still count. */
 export const EARLY_BEATS = 0.5
-const HIT_FRAMES = 3
+/** After a chord is first recognised, keep listening this long for the rest of its strings. */
+const JUDGE_SECONDS = 0.3
+/** Onset detection lags the actual strum by roughly this much. */
+const INPUT_LATENCY = 0.03
 
 export function buildLayout(seq: SeqItem[]): Layout {
   let acc = 0
@@ -105,18 +112,21 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
     previewRef.current = previewChordId
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1 })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
     nextResolve: 0,
-    goodFrames: 0,
     windowOpenedAt: null as number | null,
+    /** AudioContext time the target chord's beat lands (or when we arrived at it, in wait mode) */
+    targetStartTime: 0,
+    judging: null as { abs: number; until: number; best: number; onset: number } | null,
     strummed: new Set<number>(),
   })
 
   const [phase, setPhase] = useState<Phase>('idle')
-  const [score, setScore] = useState({ hits: 0, misses: 0, streak: 0, best: 0 })
+  const [score, setScore] = useState<ScoreState>(emptyScore)
+  const scoreRef = useRef<ScoreState>(emptyScore())
   const [ui, setUi] = useState<UiState>({ strings: Array(6).fill(false), match: 0, level: 0, target: null, next: null, countdown: null })
   const uiKey = useRef('')
 
@@ -127,15 +137,18 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
     v.pos = settingsRef.current.countIn ? -4 : -1
     v.results = new Map()
     v.targetAbs = null
+    v.lastJudgment = null
+    v.multiplier = 1
     v.phase = 'countin'
     const st = internal.current
     st.lastT = engine.ctx.currentTime
     st.nextClick = Math.ceil(v.pos)
     st.nextResolve = 0
-    st.goodFrames = 0
     st.windowOpenedAt = null
+    st.judging = null
     st.strummed = new Set()
-    setScore({ hits: 0, misses: 0, streak: 0, best: 0 })
+    scoreRef.current = emptyScore()
+    setScore(scoreRef.current)
     setPhase('countin')
   }, [engine])
 
@@ -143,6 +156,8 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
     view.current.phase = 'idle'
     view.current.pos = -1.5
     view.current.targetAbs = null
+    view.current.results = new Map()
+    view.current.multiplier = 1
     setPhase('idle')
   }, [])
 
@@ -158,6 +173,21 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
       const lay = layoutRef.current
       const threshold = 30 - (s.sensitivity / 100) * 22 // 30 dB strict … 8 dB lenient
       const now = engine.ctx.currentTime
+      const minMatch = 0.8 - (s.sensitivity / 100) * 0.2
+
+      const record = (j: Judgment) => {
+        v.results.set(j.abs, j)
+        scoreRef.current = applyJudgment(scoreRef.current, j)
+        v.lastJudgment = j
+        v.multiplier = scoreRef.current.multiplier
+        setScore(scoreRef.current)
+      }
+      const expectedStrings = (e: ChordEvent) => e.chord.frets.filter((f) => f >= 0).length
+      const finalize = (e: ChordEvent) => {
+        const jg = st.judging!
+        st.judging = null
+        record(judge(scoreRef.current, e.abs, jg.best, expectedStrings(e), jg.onset - INPUT_LATENCY - st.targetStartTime))
+      }
 
       let target: ChordEvent | null = null
       let next: Chord | null = null
@@ -181,6 +211,11 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
         }
 
         if (!s.loop && pos >= lay.total) {
+          for (let e = eventByAbs(lay, st.nextResolve, false); e; e = eventByAbs(lay, ++st.nextResolve, false)) {
+            if (v.results.has(e.abs)) continue
+            if (st.judging?.abs === e.abs) finalize(e)
+            else record(missJudgment(e.abs, expectedStrings(e)))
+          }
           v.phase = 'done'
           v.pos = lay.total
           setPhase('done')
@@ -201,12 +236,11 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
           st.nextClick++
         }
 
-        // Anything that scrolled past unplayed is a miss.
+        // Anything that scrolled past unplayed is a miss (unless we were mid-judgement).
         for (let e = eventByAbs(lay, st.nextResolve, s.loop); e && e.end <= pos; e = eventByAbs(lay, ++st.nextResolve, s.loop)) {
-          if (!v.results.has(e.abs)) {
-            v.results.set(e.abs, 'miss')
-            setScore((sc) => ({ ...sc, misses: sc.misses + 1, streak: 0 }))
-          }
+          if (v.results.has(e.abs)) continue
+          if (st.judging?.abs === e.abs) finalize(e)
+          else record(missJudgment(e.abs, expectedStrings(e)))
         }
 
         const cur = eventAt(lay, pos, s.loop)
@@ -218,15 +252,20 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
         if (target && target.abs !== v.targetAbs) {
           v.targetAbs = target.abs
           st.windowOpenedAt = null
-          st.goodFrames = 0
         }
+        // In wait mode the clock freezes on the chord, so its "beat" is when we arrived.
+        if (target && (!s.waitMode || pos < target.start)) st.targetStartTime = now + (target.start - pos) / bps
         analysisChord = target?.chord ?? null
         next = target ? eventByAbs(lay, target.abs + 1, s.loop)?.chord ?? null : null
 
-        // Test mode: strum the right chord on the beat, as if a player did.
+        // Test mode: a slightly sloppy robot strums along so every grade shows up.
         if (s.testMode && target && !st.strummed.has(target.abs) && target.start - pos <= EARLY_BEATS) {
           st.strummed.add(target.abs)
-          engine.strum(target.chord, now + Math.max(0, (target.start - pos) / bps) - 0.04, true)
+          const r = Math.random()
+          const jitter = r < 0.55 ? 0 : (Math.random() - 0.5) * 0.4
+          const played = target.chord.frets.flatMap((f, i) => (f >= 0 ? [i] : []))
+          const drop = r > 0.8 ? played.slice(0, 1 + Math.floor(Math.random() * 2)) : []
+          engine.strum(target.chord, now + Math.max(0, (target.start - pos) / bps) + jitter, true, drop)
         }
       }
 
@@ -236,15 +275,17 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
         const inWindow = v.pos >= target.start - EARLY_BEATS && v.pos < target.end && !v.results.has(target.abs)
         if (inWindow) {
           if (st.windowOpenedAt === null) st.windowOpenedAt = now
-          const expected = target.chord.frets.filter((f) => f >= 0).length
+          const expected = expectedStrings(target)
           const ringing = a.strings.filter((on, i) => on && target!.chord.frets[i] >= 0).length
           const strummedNow = a.lastOnsetAt >= st.windowOpenedAt - 0.15
-          const minMatch = 0.8 - (s.sensitivity / 100) * 0.2
-          const good = a.gate && strummedNow && ringing / expected >= 0.6 && a.match >= minMatch
-          st.goodFrames = good ? st.goodFrames + 1 : 0
-          if (st.goodFrames >= HIT_FRAMES) {
-            v.results.set(target.abs, 'hit')
-            setScore((sc) => ({ ...sc, hits: sc.hits + 1, streak: sc.streak + 1, best: Math.max(sc.best, sc.streak + 1) }))
+          const soundsRight = a.gate && a.match >= minMatch - 0.1
+          // Start judging once enough of the chord is recognised, then take the best string count.
+          if (!st.judging && strummedNow && soundsRight && ringing / expected >= 0.34) {
+            st.judging = { abs: target.abs, until: now + JUDGE_SECONDS, best: ringing, onset: a.lastOnsetAt }
+          }
+          if (st.judging?.abs === target.abs) {
+            if (soundsRight) st.judging.best = Math.max(st.judging.best, ringing)
+            if (now >= st.judging.until || st.judging.best === expected) finalize(target)
           }
         }
       }

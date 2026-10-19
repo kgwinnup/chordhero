@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import type { Chord } from '../music/chords'
 import { STRING_NAMES } from '../music/chords'
 
@@ -13,20 +13,9 @@ const NUT_X = LABEL_W + 30
 const TOP = 30
 const GAP = 42
 
-function useNarrow(query = '(max-width: 640px)') {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const mq = window.matchMedia(query)
-    const onChange = () => setNarrow(mq.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [query])
-  return narrow
-}
-
 export function Fretboard({ chord, ringing }: Props) {
   // Phones get fewer, wider frets so everything stays readable.
-  const narrow = useNarrow()
+  const narrow = useMediaQuery('(max-width: 640px)')
   const fretCount = narrow ? 4 : 5
   const FRET_W = narrow ? 104 : 128
   const W = NUT_X + fretCount * FRET_W + 16

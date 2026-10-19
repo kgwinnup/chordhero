@@ -1,0 +1,103 @@
+import type { Settings } from '../game/useGame'
+
+interface Props {
+  settings: Settings
+  set: <K extends keyof Settings>(k: K, value: Settings[K]) => void
+  running: boolean
+  onDemo: (on: boolean) => void
+  devices: MediaDeviceInfo[]
+  deviceId: string
+  onDevice: (id: string) => void
+  onClose: () => void
+}
+
+const VIEWS: { value: Settings['highway']; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'horizontal', label: 'Side' },
+  { value: 'vertical', label: 'Lane' },
+]
+
+export function SettingsSheet({ settings, set, running, onDemo, devices, deviceId, onDevice, onClose }: Props) {
+  return (
+    <div className="results-backdrop sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          <h2>Settings</h2>
+          <button className="icon ghost" aria-label="Close settings" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div className="sheet-group">
+          <span className="sheet-label">Highway</span>
+          <div className="segmented" role="radiogroup" aria-label="Highway direction">
+            {VIEWS.map((v) => (
+              <button
+                key={v.value}
+                role="radio"
+                aria-checked={settings.highway === v.value}
+                className={settings.highway === v.value ? 'on' : ''}
+                onClick={() => set('highway', v.value)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <p className="sheet-hint">Auto uses the Guitar Hero–style lane on phones held upright.</p>
+        </div>
+
+        <div className="sheet-group">
+          <span className="sheet-label">Gameplay</span>
+          <Toggle label="Wait for me" hint="Pause on each chord until you play it" checked={settings.waitMode} onChange={(v) => set('waitMode', v)} />
+          <Toggle label="Loop" hint="Repeat the sequence" checked={settings.loop} onChange={(v) => set('loop', v)} disabled={running} />
+          <Toggle label="Metronome" checked={settings.metronome} onChange={(v) => set('metronome', v)} />
+          <Toggle label="Count-in" hint="One bar of clicks before the first chord" checked={settings.countIn} onChange={(v) => set('countIn', v)} />
+        </div>
+
+        <div className="sheet-group">
+          <span className="sheet-label">Listening</span>
+          <label className="sensitivity">
+            <span>Strict</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={settings.sensitivity}
+              onChange={(e) => set('sensitivity', Number(e.target.value))}
+              aria-label="Detection sensitivity"
+            />
+            <span>Lenient</span>
+          </label>
+          {devices.length > 1 && (
+            <select aria-label="Input device" value={deviceId} onChange={(e) => onDevice(e.target.value)}>
+              <option value="">Default microphone</option>
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || 'Microphone'}
+                </option>
+              ))}
+            </select>
+          )}
+          <Toggle label="Demo mode" hint="No guitar: the app strums for you" checked={settings.testMode} onChange={onDemo} disabled={running} />
+        </div>
+
+        <button className="primary big sheet-done" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Toggle({ label, hint, checked, onChange, disabled }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <label className="toggle">
+      <span className="toggle-text">
+        {label}
+        {hint && <small>{hint}</small>}
+      </span>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="track" aria-hidden />
+    </label>
+  )
+}

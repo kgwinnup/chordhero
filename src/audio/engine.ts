@@ -99,12 +99,16 @@ export class AudioEngine {
     osc.stop(when + 0.08)
   }
 
-  /** Play a synthesized strum of `chord`. With `analyse`, the detector hears it too (test mode). */
-  strum(chord: Chord, when = this.ctx.currentTime, analyse = false) {
-    let buf = this.strumCache.get(chord.id)
+  /**
+   * Play a synthesized strum of `chord`. With `analyse`, the detector hears it too (test mode).
+   * `skip` lists strings to leave out, to imitate a sloppy strum.
+   */
+  strum(chord: Chord, when = this.ctx.currentTime, analyse = false, skip: number[] = []) {
+    const key = `${chord.id}:${skip.join()}`
+    let buf = this.strumCache.get(key)
     if (!buf) {
-      buf = this.synthesizeStrum(chord)
-      this.strumCache.set(chord.id, buf)
+      buf = this.synthesizeStrum(chord, skip)
+      this.strumCache.set(key, buf)
     }
     const src = this.ctx.createBufferSource()
     src.buffer = buf
@@ -114,14 +118,14 @@ export class AudioEngine {
   }
 
   /** Karplus–Strong plucked strings, low to high with a small strum delay. */
-  private synthesizeStrum(chord: Chord): AudioBuffer {
+  private synthesizeStrum(chord: Chord, skip: number[]): AudioBuffer {
     const sr = this.ctx.sampleRate
     const buf = this.ctx.createBuffer(1, Math.floor(sr * 3), sr)
     const out = buf.getChannelData(0)
     let k = 0
     chord.frets.forEach((_, s) => {
       const m = stringMidi(chord, s)
-      if (m === null) return
+      if (m === null || skip.includes(s)) return
       // The averaging filter adds half a sample of delay, so subtract it.
       const period = Math.max(2, Math.round(sr / midiToFreq(m) - 0.5))
       const ring = new Float32Array(period)
@@ -162,7 +166,7 @@ export class AudioEngine {
     this.rmsHistory.push({ t: now, v: level })
     while (this.rmsHistory.length && this.rmsHistory[0].t < now - 0.3) this.rmsHistory.shift()
     const recentMin = Math.min(...this.rmsHistory.map((h) => h.v))
-    if (gate && level > recentMin * 2 && now - this.lastOnsetAt > 0.15) this.lastOnsetAt = now
+    if (gate && level > recentMin * 2 && now - this.lastOnsetAt > 0.25) this.lastOnsetAt = now
 
     const binHz = this.ctx.sampleRate / FFT_SIZE
     const toBin = (f: number) => Math.round(f / binHz)
