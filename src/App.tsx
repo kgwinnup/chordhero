@@ -83,6 +83,17 @@ export default function App() {
   useEffect(() => save('chordlight.prefs', { defaultBeats, preset: presetId }), [defaultBeats, presetId])
   useEffect(() => saveCustomPresets(customPresets), [customPresets])
 
+  // Practice mode shows the chord you last heard or added in the editor; once the editor
+  // closes or you pick another song, go back to that song's first chord.
+  const closeEditor = () => {
+    setEditing(null)
+    setPreview(null)
+  }
+  const choosePreset = (id: string) => {
+    setPresetId(id)
+    setPreview(null)
+  }
+
   const savePreset = (name: string, items: PresetItem[]) => {
     const current = editing?.preset
     if (current && !current.builtIn) {
@@ -92,12 +103,12 @@ export default function App() {
       setCustomPresets((list) => [...list, { id, name, builtIn: false, items }])
       setPresetId(id)
     }
-    setEditing(null)
+    closeEditor()
   }
   const deletePreset = (id: string) => {
     setCustomPresets((list) => list.filter((p) => p.id !== id))
     if (presetId === id) setPresetId(BUILT_IN_PRESETS[0].id)
-    setEditing(null)
+    closeEditor()
   }
 
   // Mobile browsers only let audio start from a tap; resume on any tap in case the
@@ -167,7 +178,7 @@ export default function App() {
             disabled={running}
             onChange={(e) => {
               if (e.target.value === '__new') setEditing({ preset: null })
-              else setPresetId(e.target.value)
+              else choosePreset(e.target.value)
             }}
           >
             <optgroup label="Songs">
@@ -245,7 +256,7 @@ export default function App() {
             toggleTestMode(on)
             if (!on) setSettingsOpen(false) // the mic popup takes over
           }}
-          devices={mic === 'on' ? devices : []}
+          devices={mic === 'on' && !running ? devices : []}
           deviceId={deviceId}
           onDevice={changeDevice}
           onClose={() => setSettingsOpen(false)}
@@ -328,7 +339,7 @@ export default function App() {
           onHear={hear}
           onSave={savePreset}
           onDelete={editing.preset && !editing.preset.builtIn ? () => deletePreset(editing.preset!.id) : undefined}
-          onClose={() => setEditing(null)}
+          onClose={closeEditor}
         />
       )}
     </div>

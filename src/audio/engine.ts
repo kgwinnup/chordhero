@@ -1,4 +1,5 @@
-import { type Chord, chordPitchClasses, midiToFreq, NOTE_NAMES, stringMidi } from '../music/chords'
+import { type Chord, midiToFreq, NOTE_NAMES, stringMidi } from '../music/chords'
+import { chromaMatch, isNoiseLike, scoreStrings } from './detect'
 
 export interface Analysis {
   /** RMS of the most recent ~40ms of input, 0..1 */
@@ -16,26 +17,6 @@ export interface Analysis {
 }
 
 const FFT_SIZE = 16384 // ~2.9 Hz/bin at 48 kHz: enough to separate low E from F
-const TOLERANCE = Math.pow(2, 40 / 1200) // ±40 cents around each expected note
-/** Overtones checked per string, and how much each is discounted (indexed by harmonic number). */
-const HARMONIC_PENALTY = [0, 0, 0, 3, 6, 8, 10]
-/** Each note is compared with the noise within half an octave either side of it. */
-const LOCAL_FLOOR_SPAN = Math.SQRT2
-/** Bass strings get this much slack: even with a local floor, built-in mics hear them least clearly. */
-const BASS_RELIEF_DB = 4
-const BASS_BELOW_HZ = 130
-/**
- * When a string's note could be an overtone of a lower string that's sounding, it only counts
- * if it stands this far above the loudest of that string's other overtones around it.
- */
-const OVERTONE_EXCESS_DB = 6
-/**
- * A lower string this far above the noise counts as a possible source of overtones even before
- * it lights: early in a pluck its overtones are already strong while its own note is still rising.
- */
-const SOURCE_PRESENT_DB = 6
-/** Above this spectral flatness the sound is noise-like (key clicks, taps, rustle), not strings. */
-const MAX_FLATNESS = 0.3
 /** Consecutive frames a string must read as ringing before it lights. */
 const PERSIST_FRAMES = 2
 const GATE_RMS = 0.006
@@ -113,6 +94,8 @@ export class AudioEngine {
     this.strumCache.clear()
     this.rmsHistory = []
     this.ringAt.fill(-Infinity)
+    this.streak.fill(0)
+    this.wasIndependent.fill(false)
     this.lastOnsetAt = -Infinity
   }
 
@@ -290,142 +273,30 @@ export class AudioEngine {
     if (gate && level > recentMin * 2 && now - this.lastOnsetAt > 0.25) this.lastOnsetAt = now
 
     const binHz = this.ctx.sampleRate / FFT_SIZE
-    const toBin = (f: number) => Math.round(f / binHz)
-    const floor = this.median(toBin(70), toBin(2500))
-    // Local floor: built-in mics roll off the bass and rooms rumble there, so a single
-    // spectrum-wide floor both hides a quiet low E and lets rumble pass for one.
-    const localFloor = (f: number) => this.median(toBin(f / LOCAL_FLOOR_SPAN), toBin(f * LOCAL_FLOOR_SPAN) + 1)
-    const peak = (f: number) => {
-      const lo = Math.floor(f / TOLERANCE / binHz)
-      const hi = Math.ceil((f * TOLERANCE) / binHz)
-      let max = -Infinity
-      for (let b = lo; b <= hi && b < this.freqData.length; b++) max = Math.max(max, this.freqData[b])
-      return max
-    }
-
     if (chord?.id !== this.ringChordId) {
       this.ringChordId = chord?.id ?? null
       this.ringAt.fill(-Infinity)
       this.streak.fill(0)
       this.wasIndependent.fill(false)
     }
-    const tonal = this.flatness(toBin(70), toBin(3000)) < MAX_FLATNESS
 
     const strings = new Array<boolean>(6).fill(false)
-    const scores = new Array<number>(6).fill(0)
+    let scores = new Array<number>(6).fill(0)
     let match = 0
-
     if (chord) {
-      const expected = chord.frets.map((_, s) => {
-        const m = stringMidi(chord, s)
-        return m === null ? null : midiToFreq(m)
-      })
-      const near = (a: number, b: number) => a / b < TOLERANCE && b / a < TOLERANCE
-      /** Is `hf` (close to) some overtone of the note `g`? Returns which one, or 0. */
-      const overtoneOf = (hf: number, g: number) => {
-        const k = Math.round(hf / g)
-        return k >= 1 && near(k * g, hf) ? k : 0
-      }
-      /** How far a partial stands above the noise around it; immune to the mic's bass rolloff. */
-      const contrast = (f: number) => peak(f) - localFloor(f)
-      const ringingNow = new Array<boolean>(6).fill(false)
-      const present = new Array<boolean>(6).fill(false)
-      // Strings whose evidence is their own: a peak no sounding lower string explains, or one
-      // that clearly stands out from that string's overtones. Only these may claim neighbouring
-      // overtones as theirs; strings lit on the benefit of the doubt can't vouch for each other.
-      const independentNow = new Array<boolean>(6).fill(false)
-      const vouches = (o: number) => independentNow[o] || this.wasIndependent[o]
-
-      // Decide strings from low to high pitch, so a higher string's note can be checked against
-      // the overtones of lower strings already known to be sounding.
-      const order = expected.map((f, i) => ({ f, i })).filter((x) => x.f !== null).sort((a, b) => a.f! - b.f!)
-      for (const { f: fNote, i: s } of order) {
-        const f = fNote!
-        let best = -Infinity
-        let bestOwn = -Infinity
-        for (let h = 1; h < HARMONIC_PENALTY.length; h++) {
-          const hf = h * f
-          if (hf > 2500) break
-          let usable = true
-          let own = true
-          for (let o = 0; o < 6 && usable; o++) {
-            const g = expected[o]
-            if (o === s || g === null) continue
-            const k = overtoneOf(hf, g)
-            if (!k) continue
-            if (g >= f) {
-              // Our overtone sits on a higher string's note or overtone: it proves nothing about us.
-              if (h > 1) usable = false
-            } else if (present[o] || ringingNow[o]) {
-              // A lower string that's sounding could have made this peak. Count it only if it stands
-              // out from that string's own overtone envelope: all its overtones up to two past this one
-              // (a low E's 2nd overtone is often its loudest), skipping any another string claims.
-              const neighbours = Array.from({ length: k + 2 }, (_, n) => n + 1)
-                .filter((n) => n !== k && n * g <= 2500)
-                .map((n) => n * g)
-                .filter((nf) => !expected.some((g2, o2) => o2 !== o && o2 !== s && g2 !== null && vouches(o2) && overtoneOf(nf, g2)))
-              if (!neighbours.length) own = false // nothing to compare against: benefit of the doubt
-              else if (contrast(hf) - Math.max(...neighbours.map(contrast)) < OVERTONE_EXCESS_DB) usable = false
-            }
-          }
-          if (!usable) continue
-          const score = contrast(hf) - HARMONIC_PENALTY[h]
-          best = Math.max(best, score)
-          if (own) bestOwn = Math.max(bestOwn, score)
-        }
-        scores[s] = best
-        present[s] = best > SOURCE_PRESENT_DB
-        const need = threshold - (f < BASS_BELOW_HZ ? BASS_RELIEF_DB : 0)
-        ringingNow[s] = gate && tonal && best > need
-        independentNow[s] = gate && tonal && bestOwn > need
-        this.streak[s] = ringingNow[s] ? this.streak[s] + 1 : 0
+      const allowed = gate && !isNoiseLike(this.freqData, binHz)
+      const result = scoreStrings(this.freqData, binHz, chord, threshold, allowed, this.wasIndependent)
+      scores = result.scores
+      this.wasIndependent = result.independent
+      for (let s = 0; s < 6; s++) {
+        // A string lights after reading as ringing a few frames in a row, then holds briefly.
+        this.streak[s] = result.ringing[s] ? this.streak[s] + 1 : 0
         if (this.streak[s] >= PERSIST_FRAMES) this.ringAt[s] = now
         strings[s] = now - this.ringAt[s] < HOLD_SECONDS
       }
-      this.wasIndependent = independentNow
-
-      if (gate) match = this.chromaMatch(chord, floor, binHz)
+      if (gate) match = chromaMatch(this.freqData, binHz, chord)
     }
 
     return { level, gate, strings, scores, match, lastOnsetAt: this.lastOnsetAt }
-  }
-
-  /** Cosine similarity between the heard pitch-class profile and the chord's notes. */
-  private chromaMatch(chord: Chord, floor: number, binHz: number) {
-    const chroma = new Array<number>(12).fill(0)
-    const lo = Math.floor(75 / binHz)
-    const hi = Math.ceil(1600 / binHz)
-    for (let b = lo; b <= hi; b++) {
-      const above = this.freqData[b] - floor - 12
-      if (above <= 0) continue
-      const midi = Math.round(12 * Math.log2((b * binHz) / 440) + 69)
-      chroma[((midi % 12) + 12) % 12] += above
-    }
-    const pcs = chordPitchClasses(chord)
-    let dot = 0
-    let norm = 0
-    chroma.forEach((v, pc) => {
-      norm += v * v
-      if (pcs.has(pc)) dot += v
-    })
-    return norm > 0 ? dot / (Math.sqrt(norm) * Math.sqrt(pcs.size)) : 0
-  }
-
-  /** Spectral flatness (0 = pure tones … 1 = white noise) over a bin range. */
-  private flatness(lo: number, hi: number) {
-    let logSum = 0
-    let sum = 0
-    for (let b = lo; b < hi; b++) {
-      const db = this.freqData[b]
-      logSum += db * (Math.LN10 / 10)
-      sum += Math.pow(10, db / 10)
-    }
-    const n = hi - lo
-    return sum > 0 ? Math.exp(logSum / n) / (sum / n) : 1
-  }
-
-  private median(lo: number, hi: number) {
-    const slice = this.freqData.slice(lo, hi).sort()
-    return slice[slice.length >> 1]
   }
 }

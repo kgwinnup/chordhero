@@ -17,7 +17,12 @@ A Simply Guitar–style chord trainer that runs entirely in the browser. Build a
 ```bash
 npm install
 npm run dev
+npm test   # chords and string order, scoring, timeline, presets, string detection
 ```
+
+The string-detection tests feed synthetic guitar spectra (flat and phone-style mics) through the
+detector and check that every single plucked string lights only itself and every full strum lights
+the whole chord. Deploys only go out when the tests pass.
 
 ## Deploy (static hosting)
 

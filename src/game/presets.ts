@@ -28,7 +28,8 @@ export const toItems = (seq: SeqItem[]): PresetItem[] => seq.map(({ chordId, bea
 export function loadCustomPresets(): Preset[] {
   try {
     const raw = localStorage.getItem(CUSTOM_KEY)
-    const parsed = raw ? (JSON.parse(raw) as Preset[]) : []
+    // Nothing saved yet: fall through to the sequence older versions kept.
+    const parsed = raw === null ? null : (JSON.parse(raw) as Preset[])
     if (Array.isArray(parsed)) {
       return parsed
         .map((p) => ({ ...p, builtIn: false, items: (p.items ?? []).filter((it) => CHORDS_BY_ID[it.chordId]) }))
