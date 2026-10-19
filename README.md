@@ -1,16 +1,16 @@
-# ChordLight
+# ChordHero
 
-A Simply Guitar–style chord trainer that runs entirely in the browser. Build a chord sequence, pick a tempo, and play along. ChordLight listens through your mic, lights up each string as it hears it ring, and scores each chord as it scrolls past the "now" line.
+A Simply Guitar–style chord trainer that runs entirely in the browser. Build a chord sequence, pick a tempo, and play along. ChordHero listens through your mic, lights up each string as it hears it ring, and scores each chord as it scrolls past the "now" line.
 
 ## Features
 
-- **Live string detection.** The fretboard lights each string green when its note is heard (Web Audio FFT, checking each string's fundamental and harmonics).
-- **Chord highway.** Chords scroll toward the playhead so you can see what's next. Hits turn green and misses turn red.
-- **Wait for me** mode pauses on each chord until you play it. Turn it off to play strictly in time.
-- **Tempo** from 30 to 200 BPM, plus a metronome, count-in, and looping.
-- **Sequence builder** with 23 chords and presets. Each chord can last 1–8 beats, and ♪ plays any chord so you can hear it.
-- **Test mode** strums the right chords for you, so you can try the app without a guitar or mic.
-- Works on phones and desktop. Settings are saved in your browser.
+- **Living fretboard.** A detailed neck (rosewood, frets, inlays, wound strings) shows exactly where your fingers go. Each string glows and shimmers when the mic hears it, and the next chord's shape ghosts in before you need it.
+- **Chord strip.** Upcoming chords slide toward you along the top. The current card shrinks as its beats pass.
+- **Guitar Hero–style scoring.** Every chord is graded on how many strings rang and how close to the beat you strummed (Perfect, Great, Good, OK, Miss), with combo multipliers, sparks, and a results screen with your best score.
+- **Presets.** Pick a song from the menu at the top, or choose *Build your own…* to make and save your own chord sequences. Each chord can last 1–8 beats.
+- **Wait for me** mode (in ⚙) pauses on each chord until you play it. You also get a metronome, count-in, looping, and detection sensitivity.
+- **Mic check.** You enable the mic and strum once to confirm it hears you. *Watch a demo* plays the game for you without a guitar.
+- Works on phones (upright or sideways) and desktop. Settings and presets are saved in your browser.
 
 ## Develop
 

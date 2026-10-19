@@ -32,9 +32,9 @@ export function MicGate({ micOn, error, level, onEnable, onDemo, onReady, device
         </div>
         {!micOn ? (
           <>
-            <h2>Let ChordLight hear you</h2>
+            <h2>Let ChordHero hear you</h2>
             <p>
-              ChordLight listens to your guitar to light up the strings and score each chord. Allow microphone access to
+              ChordHero listens to your guitar to light up the strings and score each chord. Allow microphone access to
               play.
             </p>
             {error && <p className="gate-error">{error}</p>}

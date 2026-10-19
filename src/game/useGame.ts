@@ -21,8 +21,6 @@ export interface Settings {
   sensitivity: number
   /** Feed synthesized strums to the detector instead of the mic */
   testMode: boolean
-  /** Highway direction; auto = vertical on portrait phones */
-  highway: 'auto' | 'horizontal' | 'vertical'
 }
 
 export type Phase = 'idle' | 'countin' | 'playing' | 'done'
@@ -49,6 +47,9 @@ export interface GameView {
   targetAbs: number | null
   lastJudgment: Judgment | null
   multiplier: number
+  /** The chord being listened for, and which of its strings are ringing right now */
+  display: Chord | null
+  ringing: boolean[]
 }
 
 export interface UiState {
@@ -112,7 +113,7 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
     previewRef.current = previewChordId
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1 })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false) })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
@@ -291,6 +292,8 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
       }
 
       const strings = analysisChord ? a.strings : Array(6).fill(false)
+      v.display = analysisChord
+      v.ringing = strings
       const key = [strings.join(), a.match.toFixed(2), a.level.toFixed(3), analysisChord?.id, next?.id, countdown].join('|')
       if (key !== uiKey.current) {
         uiKey.current = key

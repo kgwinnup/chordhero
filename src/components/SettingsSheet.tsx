@@ -11,12 +11,6 @@ interface Props {
   onClose: () => void
 }
 
-const VIEWS: { value: Settings['highway']; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'horizontal', label: 'Side' },
-  { value: 'vertical', label: 'Lane' },
-]
-
 export function SettingsSheet({ settings, set, running, onDemo, devices, deviceId, onDevice, onClose }: Props) {
   return (
     <div className="results-backdrop sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={onClose}>
@@ -26,24 +20,6 @@ export function SettingsSheet({ settings, set, running, onDemo, devices, deviceI
           <button className="icon ghost" aria-label="Close settings" onClick={onClose}>
             ✕
           </button>
-        </div>
-
-        <div className="sheet-group">
-          <span className="sheet-label">Highway</span>
-          <div className="segmented" role="radiogroup" aria-label="Highway direction">
-            {VIEWS.map((v) => (
-              <button
-                key={v.value}
-                role="radio"
-                aria-checked={settings.highway === v.value}
-                className={settings.highway === v.value ? 'on' : ''}
-                onClick={() => set('highway', v.value)}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-          <p className="sheet-hint">Auto uses the Guitar Hero–style lane on phones held upright.</p>
         </div>
 
         <div className="sheet-group">

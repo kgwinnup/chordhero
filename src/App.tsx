@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AudioEngine } from './audio/engine'
-import { Fretboard } from './components/Fretboard'
-import { Highway } from './components/Highway'
+import { Neck } from './components/Neck'
 import { JudgmentPopup, Results, ScoreHud } from './components/Hud'
 import { MicGate } from './components/MicGate'
 import { SettingsSheet } from './components/SettingsSheet'
-import { useMediaQuery } from './hooks/useMediaQuery'
-import { SequenceBuilder } from './components/SequenceBuilder'
-import { newKey, type SeqItem, type Settings, useGame } from './game/useGame'
+import { PresetEditor } from './components/PresetEditor'
+import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, saveCustomPresets, toSeq } from './game/presets'
+import { newKey, type Settings, useGame } from './game/useGame'
 import { CHORDS_BY_ID } from './music/chords'
 
 const DEFAULT_SETTINGS: Settings = {
@@ -18,10 +17,7 @@ const DEFAULT_SETTINGS: Settings = {
   countIn: true,
   sensitivity: 50,
   testMode: false,
-  highway: 'auto',
 }
-
-const DEFAULT_SEQ: SeqItem[] = ['G', 'C', 'D', 'G'].map((chordId) => ({ key: newKey(), chordId, beats: 4 }))
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -29,16 +25,6 @@ function load<T>(key: string, fallback: T): T {
     return raw ? { ...fallback, ...JSON.parse(raw) } : fallback
   } catch {
     return fallback
-  }
-}
-
-function loadSeq(): SeqItem[] {
-  try {
-    const raw = localStorage.getItem('chordlight.seq')
-    const parsed = raw ? (JSON.parse(raw) as SeqItem[]) : null
-    return Array.isArray(parsed) ? parsed.filter((it) => CHORDS_BY_ID[it.chordId]) : DEFAULT_SEQ
-  } catch {
-    return DEFAULT_SEQ
   }
 }
 
@@ -52,9 +38,20 @@ function save(key: string, value: unknown) {
 
 export default function App() {
   const [engine] = useState(() => new AudioEngine())
-  const [settings, setSettings] = useState<Settings>(() => ({ ...load('chordlight.settings', DEFAULT_SETTINGS), testMode: false }))
-  const [seq, setSeq] = useState<SeqItem[]>(loadSeq)
-  const [defaultBeats, setDefaultBeats] = useState(() => load('chordlight.prefs', { defaultBeats: 4 }).defaultBeats)
+  const [settings, setSettings] = useState<Settings>(() => {
+    const saved = load('chordlight.settings', DEFAULT_SETTINGS)
+    // Demo mode never survives a reload.
+    return { ...saved, testMode: false }
+  })
+  const [prefs] = useState(() => load('chordlight.prefs', { defaultBeats: 4, preset: 'builtin-1' }))
+  const [defaultBeats, setDefaultBeats] = useState(prefs.defaultBeats)
+  const [customPresets, setCustomPresets] = useState<Preset[]>(loadCustomPresets)
+  const [presetId, setPresetId] = useState(prefs.preset)
+  /** The preset editor: open with the preset to edit, or null to build a new one. */
+  const [editing, setEditing] = useState<{ preset: Preset | null } | null>(null)
+  const allPresets = [...BUILT_IN_PRESETS, ...customPresets]
+  const preset = allPresets.find((p) => p.id === presetId) ?? BUILT_IN_PRESETS[0]
+  const seq = useMemo(() => toSeq(preset.items), [preset])
   const [preview, setPreview] = useState<string | null>(null)
   const [mic, setMic] = useState<'off' | 'on' | 'error'>('off')
   const [micError, setMicError] = useState('')
@@ -83,8 +80,25 @@ export default function App() {
   })
 
   useEffect(() => save('chordlight.settings', settings), [settings])
-  useEffect(() => save('chordlight.seq', seq), [seq])
-  useEffect(() => save('chordlight.prefs', { defaultBeats }), [defaultBeats])
+  useEffect(() => save('chordlight.prefs', { defaultBeats, preset: presetId }), [defaultBeats, presetId])
+  useEffect(() => saveCustomPresets(customPresets), [customPresets])
+
+  const savePreset = (name: string, items: PresetItem[]) => {
+    const current = editing?.preset
+    if (current && !current.builtIn) {
+      setCustomPresets((list) => list.map((p) => (p.id === current.id ? { ...p, name, items } : p)))
+    } else {
+      const id = `custom-${newKey()}`
+      setCustomPresets((list) => [...list, { id, name, builtIn: false, items }])
+      setPresetId(id)
+    }
+    setEditing(null)
+  }
+  const deletePreset = (id: string) => {
+    setCustomPresets((list) => list.filter((p) => p.id !== id))
+    if (presetId === id) setPresetId(BUILT_IN_PRESETS[0].id)
+    setEditing(null)
+  }
 
   const set = <K extends keyof Settings>(k: K, value: Settings[K]) => setSettings((s) => ({ ...s, [k]: value }))
 
@@ -125,22 +139,58 @@ export default function App() {
   const listening = mic === 'on' || settings.testMode
   const gateOpen = !settings.testMode && !(mic === 'on' && micReady)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const portraitPhone = useMediaQuery('(orientation: portrait) and (max-width: 640px)')
-  const vertical = settings.highway === 'vertical' || (settings.highway === 'auto' && portraitPhone)
   const changeDevice = (id: string) => {
     setDeviceId(id)
     enableMic(id)
   }
 
   return (
-    <div className="app">
+    <div className={`app ${running ? 'running' : ''}`}>
       <header className="topbar">
         <h1>
           <span className="logo" aria-hidden>
             ◉
           </span>{' '}
-          ChordLight
+          ChordHero
         </h1>
+        <div className="preset-picker">
+          <select
+            aria-label="Song preset"
+            value={preset.id}
+            disabled={running}
+            onChange={(e) => {
+              if (e.target.value === '__new') setEditing({ preset: null })
+              else setPresetId(e.target.value)
+            }}
+          >
+            <optgroup label="Songs">
+              {BUILT_IN_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </optgroup>
+            {customPresets.length > 0 && (
+              <optgroup label="My presets">
+                {customPresets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <option value="__new">＋ Build your own…</option>
+          </select>
+          <button
+            className="icon"
+            aria-label={preset.builtIn ? 'Customize this preset' : 'Edit this preset'}
+            title={preset.builtIn ? 'Customize' : 'Edit'}
+            disabled={running}
+            onClick={() => setEditing({ preset })}
+          >
+            ✎
+          </button>
+        </div>
         <div className="row">
           <Meter level={ui.level} active={listening} />
           {mic === 'on' ? (
@@ -198,8 +248,8 @@ export default function App() {
 
       <ScoreHud score={score} />
 
-      <section className={`stage ${vertical ? 'vertical' : ''} ${score.multiplier >= 4 ? 'on-fire' : ''}`}>
-        <Highway layout={layout} view={view} loop={settings.loop} vertical={vertical} />
+      <section className={`stage ${score.multiplier >= 4 ? 'on-fire' : ''}`}>
+        <Neck layout={layout} view={view} loop={settings.loop} />
         {ui.countdown !== null && (
           <div className="countdown" key={ui.countdown}>
             {ui.countdown}
@@ -208,16 +258,6 @@ export default function App() {
         {running && <JudgmentPopup judgment={score.last} />}
       </section>
 
-      <section className="now">
-        <div className="now-chord">
-          <span className="label">{running ? 'Play' : 'Practice'}</span>
-          <span className="name">{ui.target?.name ?? '—'}</span>
-          {ui.next && running && <span className="next">next: {ui.next.name}</span>}
-        </div>
-        <div className="now-stats">
-          <MatchBar value={ui.match} />
-        </div>
-      </section>
 
       <section className="panel transport">
         <button className={`play ${running ? 'stop' : ''}`} disabled={!layout.items.length} onClick={() => {
@@ -256,9 +296,6 @@ export default function App() {
 
       </section>
 
-      <section className="panel board">
-        <Fretboard chord={ui.target} ringing={ui.strings} />
-      </section>
 
 
       {results && (
@@ -274,15 +311,18 @@ export default function App() {
         />
       )}
 
-      <SequenceBuilder
-        seq={seq}
-        onChange={setSeq}
-        defaultBeats={defaultBeats}
-        onDefaultBeats={setDefaultBeats}
-        onPreview={setPreview}
-        onHear={hear}
-        disabled={running}
-      />
+      {editing && (
+        <PresetEditor
+          preset={editing.preset}
+          defaultBeats={defaultBeats}
+          onDefaultBeats={setDefaultBeats}
+          onPreview={setPreview}
+          onHear={hear}
+          onSave={savePreset}
+          onDelete={editing.preset && !editing.preset.builtIn ? () => deletePreset(editing.preset!.id) : undefined}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }
@@ -292,19 +332,6 @@ function Meter({ level, active }: { level: number; active: boolean }) {
   return (
     <div className="meter" title="Input level" aria-label="Input level">
       <div style={{ width: `${pct}%` }} />
-    </div>
-  )
-}
-
-function MatchBar({ value }: { value: number }) {
-  const pct = Math.round(value * 100)
-  return (
-    <div className="match">
-      <span>Chord match</span>
-      <div className="bar">
-        <div style={{ width: `${pct}%` }} className={pct >= 70 ? 'good' : ''} />
-      </div>
-      <span className="pct">{pct}%</span>
     </div>
   )
 }
