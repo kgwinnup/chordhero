@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest is moving to Ubuntu 26 and its queue stalled
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
