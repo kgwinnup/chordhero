@@ -17,9 +17,14 @@ function nearestFirst(instrument: string, side: 'bass' | 'treble' | 'all') {
 }
 
 describe('tuning pegs sit where they do on real instruments', () => {
-  it.each(['acoustic', 'classical'])('%s (3+3): D and G nearest the nut, the E strings at the top', (inst) => {
-    expect(nearestFirst(inst, 'bass')).toEqual(['D', 'A', 'E'])
-    expect(nearestFirst(inst, 'treble')).toEqual(['G', 'B', 'E'])
+  it('acoustic (3+3): top to bottom D A E on the bass side and G B E on the treble side', () => {
+    expect(nearestFirst('acoustic', 'bass')).toEqual(['E', 'A', 'D'])
+    expect(nearestFirst('acoustic', 'treble')).toEqual(['E', 'B', 'G'])
+  })
+
+  it('classical (3+3): D and G nearest the nut, the E strings at the top', () => {
+    expect(nearestFirst('classical', 'bass')).toEqual(['D', 'A', 'E'])
+    expect(nearestFirst('classical', 'treble')).toEqual(['G', 'B', 'E'])
   })
 
   it('electric (6-in-line): all on the bass side, low E nearest the nut, high e at the tip', () => {

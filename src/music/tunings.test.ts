@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsOff, INSTRUMENTS, INSTRUMENTS_BY_ID, noteLabel, searchRange, tuneHint } from './tunings'
+import { centsOff, INSTRUMENTS, INSTRUMENTS_BY_ID, nextToTune, noteLabel, searchRange, stringNumber, tuneHint, tuneOrder } from './tunings'
 import { midiToFreq } from './chords'
 
 const labels = (instrument: string, tuning: string) => INSTRUMENTS_BY_ID[instrument].tunings.find((t) => t.id === tuning)!.notes.map(noteLabel)
@@ -19,7 +19,7 @@ describe('instruments and tunings', () => {
     for (const inst of INSTRUMENTS) {
       const strings = ['bass', 'ukulele'].includes(inst.id) ? 4 : 6
       for (const t of inst.tunings) expect(t.notes, `${inst.name} ${t.name}`).toHaveLength(strings)
-      expect(['three-a-side', 'six-in-line'].includes(inst.layout)).toBe(strings === 6)
+      expect(['three-a-side', 'three-a-side-outer-near', 'six-in-line'].includes(inst.layout)).toBe(strings === 6)
     }
   })
 
@@ -47,5 +47,28 @@ describe('tuning math', () => {
     const { minHz, maxHz } = searchRange(40)
     expect(minHz).toBeCloseTo(midiToFreq(31))
     expect(maxHz).toBeCloseTo(midiToFreq(49))
+  })
+})
+
+describe('tuning order', () => {
+  const guitar = INSTRUMENTS_BY_ID['acoustic'].tunings[0]
+  const uke = INSTRUMENTS_BY_ID['ukulele'].tunings[0]
+
+  it('starts at the highest string and works down to the bass side', () => {
+    expect(tuneOrder(guitar).map((i) => noteLabel(guitar.notes[i]))).toEqual(['E4', 'B3', 'G3', 'D3', 'A2', 'E2'])
+    expect(tuneOrder(uke).map((i) => noteLabel(uke.notes[i]))).toEqual(['A4', 'E4', 'C4', 'G4'])
+  })
+
+  it('numbers strings the standard way: 1 is the high e, 6 the low E', () => {
+    expect(stringNumber(guitar, 5)).toBe(1)
+    expect(stringNumber(guitar, 0)).toBe(6)
+  })
+
+  it('moves on to the next string, skipping ones already in tune, and stops when all are done', () => {
+    const order = tuneOrder(guitar) // [5, 4, 3, 2, 1, 0]
+    expect(nextToTune(order, 5, new Set([5]))).toBe(4)
+    expect(nextToTune(order, 4, new Set([5, 4, 3]))).toBe(2)
+    expect(nextToTune(order, 0, new Set([0, 5]))).toBe(4) // wraps round to a skipped string
+    expect(nextToTune(order, 0, new Set([0, 1, 2, 3, 4, 5]))).toBeUndefined()
   })
 })

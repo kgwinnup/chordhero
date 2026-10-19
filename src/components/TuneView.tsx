@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
 import { headstockGeometry } from '../music/headstock'
-import { centsOff, type HeadstockLayout, INSTRUMENTS, INSTRUMENTS_BY_ID, IN_TUNE_CENTS, noteLabel, searchRange, tuneHint } from '../music/tunings'
+import { centsOff, type HeadstockLayout, INSTRUMENTS, INSTRUMENTS_BY_ID, IN_TUNE_CENTS, nextToTune, noteLabel, searchRange, stringNumber, tuneHint, tuneOrder } from '../music/tunings'
 
 interface Props {
   engine: AudioEngine
@@ -32,13 +32,14 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
   const [choice, setChoice] = useState(loadChoice)
   const instrument = INSTRUMENTS_BY_ID[choice.instrument]
   const tuning = instrument.tunings.find((t) => t.id === choice.tuning) ?? instrument.tunings[0]
-  const [current, setCurrent] = useState(0)
+  const order = useMemo(() => tuneOrder(tuning), [tuning])
+  /** The string being tuned; until one is picked, the first in tuning order (the highest string). */
+  const [picked, setPicked] = useState<number | null>(null)
+  const current = picked ?? order[0]
   const [tuned, setTuned] = useState<Set<number>>(new Set())
   /** Latest steadied reading, tagged with the string it was for. */
   const [live, setLive] = useState<{ string: number; cents: number | null; freq: number | null; holding: number } | null>(null)
   const target = tuning.notes[current]
-  const stringCount = tuning.notes.length
-  const strings = useMemo(() => Array.from({ length: stringCount }, (_, i) => i), [stringCount])
   const allTuned = tuned.size === tuning.notes.length
 
   useEffect(() => {
@@ -53,7 +54,7 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
   const choose = (instrumentId: string, tuningId?: string) => {
     const inst = INSTRUMENTS_BY_ID[instrumentId]
     setChoice({ instrument: instrumentId, tuning: tuningId ?? (inst.tunings.some((t) => t.id === choice.tuning) ? choice.tuning : inst.tunings[0].id) })
-    setCurrent(0)
+    setPicked(null)
     setTuned(new Set())
   }
 
@@ -89,10 +90,9 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
           advancing.current = true
           setTuned((t) => new Set(t).add(current))
           setTimeout(() => {
-            // Next untuned string after this one, wrapping around to any skipped earlier.
-            const order = [...strings.slice(current + 1), ...strings.slice(0, current)]
-            const next = order.find((i) => !tunedRef.current.has(i))
-            if (next !== undefined) setCurrent(next)
+            // On to the next string down, wrapping round to any skipped earlier.
+            const next = nextToTune(order, current, tunedRef.current)
+            if (next !== undefined) setPicked(next)
             else advancing.current = false
           }, ADVANCE_MS)
         }
@@ -102,7 +102,7 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
       setLive({ string: current, cents: c, freq: p.freq, holding: progress })
     }, 80)
     return () => clearInterval(id)
-  }, [engine, micOn, target, current, strings])
+  }, [engine, micOn, target, current, order])
 
   const shown = live?.string === current ? live : null
   const cents = shown?.cents ?? null
@@ -147,7 +147,7 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
           current={current}
           tuned={tuned}
           onPick={(i) => {
-            setCurrent(i)
+            setPicked(i)
             setTuned((t) => {
               const n = new Set(t)
               n.delete(i)
@@ -164,7 +164,7 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
             </button>
           </div>
           <span className="tune-string">
-            String {current + 1} of {tuning.notes.length}
+            String {stringNumber(tuning, current)} of {tuning.notes.length}
           </span>
 
           <svg viewBox="0 0 200 116" className={`tune-meter ${hint?.kind === 'in-tune' ? 'in-tune' : ''}`} aria-hidden>
@@ -211,7 +211,7 @@ export function TuneView({ engine, micOn, onEnableMic, onBack }: Props) {
               className="ghost"
               onClick={() => {
                 setTuned(new Set())
-                setCurrent(0)
+                setPicked(null)
               }}
             >
               Start over
@@ -261,7 +261,7 @@ function Headstock({
         const active = i === current
         const done = tuned.has(i)
         return (
-          <g key={i} className={`peg ${active ? 'active' : ''} ${done ? 'done' : ''}`} onClick={() => onPick(i)} role="button" aria-label={`String ${i + 1}, ${noteLabel(notes[i])}`}>
+          <g key={i} className={`peg ${active ? 'active' : ''} ${done ? 'done' : ''}`} onClick={() => onPick(i)} role="button" aria-label={`String ${notes.length - i}, ${noteLabel(notes[i])}`}>
             <line x1={g.nutX[i]} y1={g.nutY + 40} x2={g.nutX[i]} y2={g.nutY} className="peg-string" />
             <line x1={g.nutX[i]} y1={g.nutY} x2={p.x} y2={p.y} className="peg-string" />
             <line x1={p.x} y1={p.y} x2={p.buttonX + (p.buttonX < p.x ? 22 : -22)} y2={p.y} className="peg-shaft" />

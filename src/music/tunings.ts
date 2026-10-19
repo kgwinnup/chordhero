@@ -1,7 +1,7 @@
 import { midiToFreq, NOTE_NAMES } from './chords'
 
 /** How the tuning pegs sit on the headstock (looking at its face, nut at the bottom). */
-export type HeadstockLayout = 'three-a-side' | 'six-in-line' | 'two-a-side' | 'four-in-line'
+export type HeadstockLayout = 'three-a-side' | 'three-a-side-outer-near' | 'six-in-line' | 'two-a-side' | 'four-in-line'
 
 export interface Tuning {
   id: string
@@ -26,7 +26,7 @@ const SIX_STRING_TUNINGS: Tuning[] = [
 ]
 
 export const INSTRUMENTS: Instrument[] = [
-  { id: 'acoustic', name: 'Acoustic', layout: 'three-a-side', tunings: SIX_STRING_TUNINGS },
+  { id: 'acoustic', name: 'Acoustic', layout: 'three-a-side-outer-near', tunings: SIX_STRING_TUNINGS },
   { id: 'electric', name: 'Electric', layout: 'six-in-line', tunings: SIX_STRING_TUNINGS },
   { id: 'classical', name: 'Classical', layout: 'three-a-side', tunings: [SIX_STRING_TUNINGS[0], SIX_STRING_TUNINGS[1]] },
   {
@@ -68,8 +68,14 @@ export function tuneHint(cents: number): TuneHint {
 /** Search range for a string's pitch: wide enough to catch a badly detuned string, narrow enough to skip octaves. */
 export const searchRange = (targetMidi: number) => ({ minHz: midiToFreq(targetMidi - 9), maxHz: midiToFreq(targetMidi + 9) })
 
-/**
- * Order the strings are tuned in: as the player sees them on the neck, the thickest first.
- * For a re-entrant ukulele that's G C E A, the order they sit on the instrument.
- */
-export const tuneOrder = (tuning: Tuning) => tuning.notes.map((_, i) => i)
+/** Strings in the order they're tuned: from the highest (string 1, a guitar's thin high e) down to the bass side. */
+export const tuneOrder = (tuning: Tuning) => tuning.notes.map((_, i) => i).reverse()
+
+/** Conventional string number: 1 is the treble-side string (high e on a guitar, A on a ukulele). */
+export const stringNumber = (tuning: Tuning, index: number) => tuning.notes.length - index
+
+/** The next string to tune after `current`, wrapping round to any skipped; undefined once all are tuned. */
+export function nextToTune(order: number[], current: number, tuned: ReadonlySet<number>): number | undefined {
+  const at = order.indexOf(current)
+  return [...order.slice(at + 1), ...order.slice(0, at)].find((i) => !tuned.has(i))
+}

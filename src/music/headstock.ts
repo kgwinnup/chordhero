@@ -5,9 +5,11 @@ import type { HeadstockLayout } from './tunings'
  * face with the nut at the bottom. Strings are indexed from the bass side, as in `Tuning.notes`.
  *
  * Real layouts:
- * - 3+3 (acoustic, classical, Les Paul): the middle strings (D, G) take the pegs nearest the nut and
- *   the outer strings (low E, high e) the farthest. The headstock flares outward, so the far pegs
- *   sit farther out and each outer string passes outside the inner strings' posts.
+ * - 3+3 with the middle strings near the nut (classical, Les Paul style): D and G take the pegs nearest
+ *   the nut and the E strings the farthest. The headstock flares outward, so the far pegs sit farther
+ *   out and each outer string passes outside the inner strings' posts.
+ * - 3+3 with the outer strings near the nut (acoustic): both E strings take the pegs nearest the nut,
+ *   so from the top the bass side reads D A E and the treble side G B E.
  * - 6-in-line and 4-in-line (Stratocaster, P-bass): all pegs on the bass side, the low string's
  *   peg nearest the nut and the highest string's at the tip.
  * - 2+2 (ukulele): the outer strings (G, A) take the pegs nearest the nut, the inner (C, E) the far ones.
@@ -44,6 +46,20 @@ export function headstockGeometry(layout: HeadstockLayout, strings: number): Hea
         { x: 98, y: 110 }, // low E
         { x: 114, y: 200 }, // A
         { x: 130, y: 290 }, // D
+      ]
+      const pegs = Array.from({ length: strings }, (_, i) => {
+        if (i < 3) return { ...bass[i], buttonX: LEFT_BUTTON }
+        const p = bass[5 - i] // G mirrors D, B mirrors A, high e mirrors low E
+        return { x: mirror(p.x), y: p.y, buttonX: RIGHT_BUTTON }
+      })
+      return { outline: 'M108 412 L98 332 Q70 210 74 86 Q94 38 160 46 Q226 38 246 86 Q250 210 222 332 L212 412 Z', nutY: NUT_Y, nutX, pegs }
+    }
+    case 'three-a-side-outer-near': {
+      // Bass side, from the nut up: low E, A, D; the inner strings pass inside the lower posts.
+      const bass = [
+        { x: 116, y: 290 }, // low E
+        { x: 110, y: 200 }, // A
+        { x: 104, y: 110 }, // D
       ]
       const pegs = Array.from({ length: strings }, (_, i) => {
         if (i < 3) return { ...bass[i], buttonX: LEFT_BUTTON }
