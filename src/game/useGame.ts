@@ -172,7 +172,7 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
       const st = internal.current
       const s = settingsRef.current
       const lay = layoutRef.current
-      const threshold = 30 - (s.sensitivity / 100) * 22 // 30 dB strict … 8 dB lenient
+      const threshold = 24 - (s.sensitivity / 100) * 18 // 24 dB strict … 6 dB lenient, 15 by default
       const now = engine.ctx.currentTime
       const minMatch = 0.8 - (s.sensitivity / 100) * 0.2
 

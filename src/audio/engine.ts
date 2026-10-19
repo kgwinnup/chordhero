@@ -17,7 +17,15 @@ export interface Analysis {
 
 const FFT_SIZE = 16384 // ~2.9 Hz/bin at 48 kHz: enough to separate low E from F
 const TOLERANCE = Math.pow(2, 40 / 1200) // ±40 cents around each expected note
-const HARMONIC_PENALTY = [0, 0, 3, 6] // indexed by harmonic number
+/** Overtones checked per string, and how much each is discounted (indexed by harmonic number). */
+const HARMONIC_PENALTY = [0, 0, 0, 3, 6, 8, 10]
+/** Each note is compared with the noise within half an octave either side of it. */
+const LOCAL_FLOOR_SPAN = Math.SQRT2
+/** Bass strings get this much slack: even with a local floor, built-in mics hear them least clearly. */
+const BASS_RELIEF_DB = 4
+const BASS_BELOW_HZ = 130
+/** Overtones of the other strings that an overtone must not coincide with to count. */
+const SHARED_OVERTONES = [1, 2, 3, 4]
 const GATE_RMS = 0.006
 const HOLD_SECONDS = 0.25 // keep a string lit briefly so it doesn't flicker
 
@@ -147,8 +155,8 @@ export class AudioEngine {
   }
 
   /**
-   * Listen against a target chord. `threshold` is how many dB above the
-   * noise floor a string's note must be to count as ringing.
+   * Listen against a target chord. `threshold` is how many dB a string's note must
+   * stand above the noise around its own pitch to count as ringing.
    */
   analyze(chord: Chord | null, threshold: number): Analysis {
     const now = this.ctx.currentTime
@@ -171,6 +179,9 @@ export class AudioEngine {
     const binHz = this.ctx.sampleRate / FFT_SIZE
     const toBin = (f: number) => Math.round(f / binHz)
     const floor = this.median(toBin(70), toBin(2500))
+    // Local floor: built-in mics roll off the bass and rooms rumble there, so a single
+    // spectrum-wide floor both hides a quiet low E and lets rumble pass for one.
+    const localFloor = (f: number) => this.median(toBin(f / LOCAL_FLOOR_SPAN), toBin(f * LOCAL_FLOOR_SPAN) + 1)
     const peak = (f: number) => {
       const lo = Math.floor(f / TOLERANCE / binHz)
       const hi = Math.ceil((f * TOLERANCE) / binHz)
@@ -199,14 +210,18 @@ export class AudioEngine {
         const f = expected[s]
         if (f === null) continue
         let best = -Infinity
-        for (let h = 1; h <= 3; h++) {
+        for (let h = 1; h < HARMONIC_PENALTY.length; h++) {
           const hf = h * f
-          // A harmonic that lands on another string's note proves nothing about this string.
-          if (h > 1 && expected.some((g, o) => o !== s && g !== null && near(g, hf))) continue
-          best = Math.max(best, peak(hf) - floor - HARMONIC_PENALTY[h])
+          if (hf > 2500) break
+          // An overtone that lands on another string's note (or one of its first overtones)
+          // proves nothing about this string. Unshared ones, like the low E's 5th in Em,
+          // still give a bass string a voice when the mic barely hears its fundamental.
+          if (h > 1 && expected.some((g, o) => o !== s && g !== null && SHARED_OVERTONES.some((k) => near(k * g, hf)))) continue
+          best = Math.max(best, peak(hf) - localFloor(hf) - HARMONIC_PENALTY[h])
         }
         scores[s] = best
-        if (gate && best > threshold) this.ringAt[s] = now
+        const need = threshold - (f < BASS_BELOW_HZ ? BASS_RELIEF_DB : 0)
+        if (gate && best > need) this.ringAt[s] = now
         strings[s] = now - this.ringAt[s] < HOLD_SECONDS
       }
 
