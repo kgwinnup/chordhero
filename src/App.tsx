@@ -316,12 +316,13 @@ export default function App() {
               🎤 <span className="wide-only">{settings.testMode ? 'Use ' : 'Enable '}</span>mic
             </button>
           )}
-          <button className={screen === 'learn' ? 'tune-btn on' : 'tune-btn'} onClick={() => goTo(screen === 'learn' ? 'play' : 'learn')}>
-            Learn
-          </button>
-          <button className={screen === 'tune' ? 'tune-btn on' : 'tune-btn'} onClick={() => goTo(screen === 'tune' ? 'play' : 'tune')}>
-            Tune
-          </button>
+          <nav className="screens" aria-label="Screens">
+            {(['play', 'learn', 'tune'] as const).map((to) => (
+              <button key={to} className={screen === to ? 'on' : ''} aria-current={screen === to ? 'page' : undefined} onClick={() => goTo(to)}>
+                {to === 'play' ? 'Play' : to === 'learn' ? 'Learn' : 'Tune'}
+              </button>
+            ))}
+          </nav>
           <button className="icon settings-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
             ⚙
           </button>
@@ -378,6 +379,7 @@ export default function App() {
           onChord={setPreview}
           onPlaySong={playSong}
           demo={settings.testMode}
+          sensitivity={settings.sensitivity}
         />
       ) : (
         <>

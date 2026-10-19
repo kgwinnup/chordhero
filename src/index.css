@@ -1374,8 +1374,22 @@ h3 {
 }
 
 /* Tuner */
-.tune-btn.on,
-.tune-btn.on:not(:disabled):hover {
+/* Play · Learn · Tune */
+.screens {
+  display: flex;
+  border-radius: 12px;
+  box-shadow: var(--trim);
+  overflow: hidden;
+}
+.screens button {
+  border-radius: 0;
+  box-shadow: none;
+}
+.screens button + button {
+  border-left: 1px solid rgba(0, 0, 0, 0.6);
+}
+.screens button.on,
+.screens button.on:not(:disabled):hover {
   background: var(--flame);
   color: #1a0700;
 }
@@ -2055,4 +2069,29 @@ h3 {
   .drill-intro p {
     font-size: 16px;
   }
+}
+
+/* Shape lesson: pick each string on its own first */
+.string-check {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.string-check span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #141417;
+  box-shadow: var(--trim);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 16px;
+}
+.string-check span.now {
+  color: var(--text);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.string-check span.ok {
+  color: #062b00;
+  background: var(--green);
+  animation: pop 300ms;
 }

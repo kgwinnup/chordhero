@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
-import { CHORDS_BY_ID } from '../music/chords'
-import { buildLayout, type GameView } from '../game/useGame'
-import { coach, type Hint, isChange, isClean, shapeSteps, type Strum } from '../learn/coach'
+import { CHORDS_BY_ID, stringMidi } from '../music/chords'
+import { buildLayout, type GameView, thresholdFor } from '../game/useGame'
+import { coach, type Hint, isChange, isClean, shapeSteps, SPOKEN_STRING, stringFix, type Strum } from '../learn/coach'
+import { PICK_RISE_DB, pickRang } from '../audio/detect'
 import {
   type ChangesStep,
   DRILL_SECONDS,
@@ -32,6 +33,8 @@ interface Props {
   onPlaySong: (step: SongStep) => void
   /** Demo mode: the app's own strums are what's heard */
   demo: boolean
+  /** Detection sensitivity, 0 (strict) … 100 (lenient) */
+  sensitivity: number
 }
 
 /** The beginner path: learn each chord, drill the changes, then play it in a song. */
@@ -143,9 +146,28 @@ export function Learn(props: Props) {
 
 /** Seconds after a strum's onset to gather its strings: octave strings can take a moment to light. */
 const STRUM_WINDOW = 0.6
+/** How far back from an onset to look for each note's level before it (the spectrum lags the sound). */
+const BEFORE_WINDOW = 0.4
 
-/** Collects the strings that ring in the moments after each strum, then reports the strum. */
-function useStrums(view: React.RefObject<GameView>, chordId: string, ignoreBefore: React.RefObject<number>, onStrum: (s: Strum) => void) {
+/** One strum or pick: the strings that lit, and each note's level just before and after it. */
+interface Heard extends Strum {
+  before: number[]
+  after: number[]
+}
+
+/**
+ * Collects what's heard in the moments after each strum or pick, then reports it. A pick while
+ * other strings still ring barely changes the overall level, so a note jumping counts as an onset too.
+ */
+function useStrums(
+  view: React.RefObject<GameView>,
+  chordId: string,
+  ignoreBefore: React.RefObject<number>,
+  threshold: number,
+  /** Also start on a note jumping, for single picks; strums are always caught by their onset */
+  picks: boolean,
+  onStrum: (s: Heard) => void,
+) {
   const cb = useRef(onStrum)
   useLayoutEffect(() => {
     cb.current = onStrum
@@ -154,32 +176,51 @@ function useStrums(view: React.RefObject<GameView>, chordId: string, ignoreBefor
     let raf = 0
     // Anything already ringing belongs to the chord before.
     let seen = view.current.heard.onset
-    let win: { until: number; ringing: boolean[]; soundsRight: boolean } | null = null
+    let win: (Heard & { until: number }) | null = null
+    const recent: { at: number; notes: number[] }[] = []
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const h = view.current.heard
       if (h.chordId !== chordId) return
       if (h.onset < seen) seen = h.onset // the audio clock restarted
+      if (h.at < ignoreBefore.current) {
+        // Not the player (or not a fresh strum): let it pass unheard.
+        seen = h.onset
+        win = null
+        recent.length = 0
+        return
+      }
       if (!win) {
-        if (h.onset > seen && h.onset >= ignoreBefore.current) {
+        const prior = recent.filter((r) => r.at >= h.at - BEFORE_WINDOW)
+        const lowest = (i: number) => Math.min(h.notes[i], ...prior.map((r) => r.notes[i]))
+        const jumped = picks && h.notes.some((v, i) => v >= threshold && v - lowest(i) >= PICK_RISE_DB)
+        const struck = h.onset > seen || jumped
+        if (struck) {
           seen = h.onset
-          win = { until: h.at + STRUM_WINDOW, ringing: [...h.strings], soundsRight: h.soundsRight }
+          // The quietest each note was just before.
+          const before = h.notes.map((_, i) => lowest(i))
+          win = { until: h.at + STRUM_WINDOW, ringing: [...h.strings], soundsRight: h.soundsRight, before, after: [...h.notes] }
         }
+        recent.push({ at: h.at, notes: h.notes })
+        while (recent.length && recent[0].at < h.at - BEFORE_WINDOW) recent.shift()
         return
       }
       h.strings.forEach((on, i) => {
         if (on) win!.ringing[i] = true
       })
+      win.after = win.after.map((v, i) => Math.max(v, h.notes[i]))
       win.soundsRight ||= h.soundsRight
       if (h.at >= win.until) {
-        cb.current({ ringing: win.ringing, soundsRight: win.soundsRight })
+        const { until: _, ...heard } = win
+        cb.current(heard)
         win = null
         seen = h.onset
+        recent.length = 0
       }
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [view, chordId, ignoreBefore])
+  }, [view, chordId, ignoreBefore, threshold, picks])
 }
 
 /** Plays a chord for the player, without the coach mistaking it for their strum. */
@@ -192,7 +233,17 @@ function useHear(engine: AudioEngine, demo: boolean) {
     if (!demo) ignoreBefore.current = now + 2.5
     engine.strum(CHORDS_BY_ID[chordId], now, demo)
   }
-  return { ignoreBefore, hear }
+  const pluck = async (chordId: string, s: number) => {
+    await engine.resume()
+    const now = engine.ctx.currentTime
+    if (!demo) ignoreBefore.current = now + 2.5
+    engine.pluck(stringMidi(CHORDS_BY_ID[chordId], s)!, now, demo)
+  }
+  /** Ignore whatever is heard for a moment. */
+  const quiet = (seconds: number) => {
+    ignoreBefore.current = engine.ctx.currentTime + seconds
+  }
+  return { ignoreBefore, hear, pluck, quiet }
 }
 
 interface LessonProps extends Props {
@@ -226,24 +277,42 @@ function HintBubble({ hint, idle }: { hint: Hint | null; idle: string }) {
   )
 }
 
-function ShapeLesson({ engine, view, step, demo, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
+function ShapeLesson({ engine, view, step, demo, sensitivity, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
   const chord = CHORDS_BY_ID[step.chord]
   const layout = useMemo(() => buildLayout([{ key: step.chord, chordId: step.chord, beats: 4 }]), [step.chord])
+  const strings = useMemo(() => chord.frets.flatMap((f, s) => (f >= 0 ? [s] : [])), [chord])
+  /** Strings that rang when picked on their own. */
+  const [checked, setChecked] = useState<number[]>([])
   const [clean, setClean] = useState(0)
   const [hint, setHint] = useState<Hint | null>(null)
-  const { ignoreBefore, hear } = useHear(engine, demo)
-  const passed = clean >= SHAPE_GOAL
+  const { ignoreBefore, hear, pluck, quiet } = useHear(engine, demo)
+  // First pick each string on its own (in a strum, a missing string can hide behind another
+  // string's overtones), then strum it.
+  const picking = strings.find((s) => !checked.includes(s)) ?? null
+  const passed = picking === null && clean >= SHAPE_GOAL
+  const threshold = thresholdFor(sensitivity)
 
   useEffect(() => onChord(step.chord), [onChord, step.chord])
-  useStrums(view, step.chord, ignoreBefore, (strum) => {
+  useStrums(view, step.chord, ignoreBefore, threshold, picking !== null, (heard) => {
     if (passed) return
-    setHint(coach(chord, strum))
-    if (isClean(chord, strum)) setClean((n) => n + 1)
+    if (picking !== null) {
+      if (pickRang(heard.before[picking], heard.after[picking], threshold)) {
+        setChecked((c) => [...c, picking])
+        setHint(null)
+        // The picked strings are all still ringing: only a fresh strum after this counts.
+        if (picking === strings[strings.length - 1]) quiet(0.3)
+      } else {
+        setHint({ tone: 'fix', string: picking, text: `That didn't sound like the ${SPOKEN_STRING[picking]} string ringing. ${stringFix(chord, picking)}` })
+      }
+      return
+    }
+    setHint(coach(chord, heard))
+    if (isClean(chord, heard)) setClean((n) => n + 1)
   })
 
   return (
     <section className="learn lesson">
-      <LessonHead title={stepTitle(step)} goal={`Strum it cleanly ${SHAPE_GOAL} times`} onBack={onBack}>
+      <LessonHead title={stepTitle(step)} goal={picking !== null ? 'Check each string, then strum' : `Strum it cleanly ${SHAPE_GOAL} times`} onBack={onBack}>
         <div className="goal-dots" aria-label={`${Math.min(clean, SHAPE_GOAL)} of ${SHAPE_GOAL} clean strums`}>
           {Array.from({ length: SHAPE_GOAL }, (_, i) => (
             <i key={i} className={i < clean ? 'on' : ''} />
@@ -257,21 +326,42 @@ function ShapeLesson({ engine, view, step, demo, onChord, onBack, onFinish }: Le
         {passed ? (
           <div className="lesson-pass">
             <h3>You've got {chord.name}! 🤘</h3>
-            <p>Three clean strums. Your fingers will remember this shape faster every time you play it.</p>
+            <p>Every string rang on its own, and three clean strums. Your fingers will remember this shape faster every time you play it.</p>
             <button className="primary big" onClick={onFinish}>
               Next step →
             </button>
           </div>
         ) : (
           <>
-            <HintBubble hint={hint} idle={`Make the ${chord.name} shape, then strum. Green strings rang; dark ones need fixing.`} />
-            <ol className="shape-steps">
-              {shapeSteps(chord).map((line) => (
-                <li key={line}>{line}</li>
+            <div className="string-check" aria-label="String check">
+              {strings.map((s) => (
+                <span key={s} className={checked.includes(s) ? 'ok' : s === picking ? 'now' : ''}>
+                  {checked.includes(s) ? '✓ ' : ''}
+                  {SPOKEN_STRING[s]}
+                </span>
               ))}
-            </ol>
+            </div>
+            <HintBubble
+              hint={hint}
+              idle={
+                picking !== null
+                  ? `Hold the ${chord.name} shape and pick just the ${SPOKEN_STRING[picking]} string. Let it ring.`
+                  : `Every string rings! Now strum all of ${chord.name} together.`
+              }
+            />
+            {picking === strings[0] && (
+              <ol className="shape-steps">
+                {shapeSteps(chord).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ol>
+            )}
             <div className="row lesson-actions">
-              <button onClick={() => hear(step.chord)}>♪ Hear it</button>
+              {picking !== null && demo ? (
+                <button onClick={() => pluck(step.chord, picking)}>♪ Pick it for me</button>
+              ) : (
+                <button onClick={() => hear(step.chord)}>♪ Hear it</button>
+              )}
               <button className="link" onClick={onFinish}>
                 I know this one: skip
               </button>
@@ -283,7 +373,7 @@ function ShapeLesson({ engine, view, step, demo, onChord, onBack, onFinish }: Le
   )
 }
 
-function ChangesDrill({ engine, view, step, demo, progress, onChord, onBest, onBack, onFinish }: LessonProps & { step: ChangesStep }) {
+function ChangesDrill({ engine, view, step, demo, sensitivity, progress, onChord, onBest, onBack, onFinish }: LessonProps & { step: ChangesStep }) {
   const [a, b] = step.chords
   const [phase, setPhase] = useState<'ready' | 'running' | 'done'>('ready')
   const [target, setTarget] = useState(a)
@@ -317,7 +407,7 @@ function ChangesDrill({ engine, view, step, demo, progress, onChord, onBest, onB
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
-  useStrums(view, target, ignoreBefore, (strum) => {
+  useStrums(view, target, ignoreBefore, thresholdFor(sensitivity), false, (strum) => {
     if (phase !== 'running') return
     const chord = CHORDS_BY_ID[target]
     if (isChange(chord, strum)) {

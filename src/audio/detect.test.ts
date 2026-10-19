@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { type Chord, chordPitchClasses, CHORDS, CHORDS_BY_ID, STRING_NAMES } from '../music/chords'
-import { chordFit, chordFrequencies, chromaMatch, isNoiseLike, RIVAL_LEEWAY, scoreStrings } from './detect'
+import { chordFit, chordFrequencies, chromaMatch, isNoiseLike, noteLevels, pickRang, RIVAL_LEEWAY, scoreStrings } from './detect'
 
 const SAMPLE_RATE = 48000
 const FFT_SIZE = 16384
@@ -82,6 +82,44 @@ describe.each([
       const { ringing } = listen(chord, spectrum(played(chord, rest), mic))
       expect(ringing[lowest]).toBe(false)
     })
+  })
+})
+
+describe.each([
+  ['flat mic', FLAT],
+  ['phone mic', PHONE],
+])('checking a chord string by string, with a %s', (_, mic) => {
+  // The strings picked before are still ringing, fading: their overtones sit on later strings'
+  // notes, so a string counts only if its note jumps when it's picked.
+  const before = (chord: Chord, s: number, level: number) => spectrum(played(chord, sounding(chord).filter((x) => x < s)), mic, { level })
+  /** Add another sound's partials (not its noise, which `a` already has). */
+  const mix = (a: Float32Array, b: Float32Array) => a.map((v, i) => (b[i] > -90 ? 10 * Math.log10(10 ** (v / 10) + 10 ** (b[i] / 10)) : v)) as Float32Array
+  const rang = (chord: Chord, s: number, pickedIt: boolean, pickLevel = -40) => {
+    const was = noteLevels(before(chord, s, -50), BIN_HZ, chord)[s]
+    const fading = before(chord, s, -52)
+    const now = pickedIt ? mix(fading, spectrum(played(chord, [s]), mic, { level: pickLevel, seed: 2 })) : fading
+    return pickRang(was, noteLevels(now, BIN_HZ, chord)[s], THRESHOLD)
+  }
+  const cases = CHORDS.flatMap((chord) => sounding(chord).map((s) => [`${chord.name}, ${STRING_NAMES[s]} string`, chord, s] as const))
+
+  it.each(cases)('%s counts when picked', (_, chord, s) => {
+    expect(rang(chord, s, true)).toBe(true)
+    expect(rang(chord, s, true, -46), 'a soft pick').toBe(true)
+  })
+
+  it.each(cases)('%s does not count when it is skipped', (_, chord, s) => {
+    expect(rang(chord, s, false)).toBe(false)
+  })
+
+  it('a muted string, picked, does not count', () => {
+    for (const chord of CHORDS) {
+      for (const s of sounding(chord)) {
+        // A dead thud: broadband noise, no note.
+        const thud = spectrum([], mic, { seed: 5 }).map((v) => v + 25) as Float32Array
+        const was = noteLevels(before(chord, s, -50), BIN_HZ, chord)[s]
+        expect(pickRang(was, noteLevels(mix(before(chord, s, -52), thud), BIN_HZ, chord)[s], THRESHOLD), `${chord.name} ${STRING_NAMES[s]}`).toBe(false)
+      }
+    }
   })
 })
 

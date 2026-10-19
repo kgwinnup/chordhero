@@ -1,5 +1,5 @@
 import { type Chord, CHORDS, midiToFreq, stringMidi } from '../music/chords'
-import { chordFit, isNoiseLike, scoreStrings } from './detect'
+import { chordFit, isNoiseLike, noteLevels, scoreStrings } from './detect'
 import { type Pitch, type PitchRange, yinPitch } from './pitch'
 
 export type { Pitch } from './pitch'
@@ -19,6 +19,8 @@ export interface Analysis {
   rival: number
   /** AudioContext time of the last detected strum */
   lastOnsetAt: number
+  /** Per string: dB its note stands above the noise (see `noteLevels`) */
+  notes: number[]
 }
 
 const FFT_SIZE = 16384 // ~2.9 Hz/bin at 48 kHz: enough to separate low E from F
@@ -195,10 +197,11 @@ export class AudioEngine {
   }
 
   /** Play one note, e.g. a tuner's reference pitch. */
-  pluck(midi: number, when = this.ctx.currentTime) {
+  pluck(midi: number, when = this.ctx.currentTime, analyse = false) {
     const src = this.ctx.createBufferSource()
     src.buffer = this.synthesize([midi])
     src.connect(this.output)
+    if (analyse) src.connect(this.input)
     src.start(Math.max(when, this.ctx.currentTime))
   }
 
@@ -271,7 +274,9 @@ export class AudioEngine {
     let scores = new Array<number>(6).fill(0)
     let match = 0
     let rival = 0
+    let notes = new Array<number>(6).fill(0)
     if (chord) {
+      notes = noteLevels(this.freqData, binHz, chord)
       const allowed = gate && !isNoiseLike(this.freqData, binHz)
       const result = scoreStrings(this.freqData, binHz, chord, threshold, allowed, this.wasIndependent)
       scores = result.scores
@@ -285,6 +290,6 @@ export class AudioEngine {
       if (gate) ({ match, rival } = chordFit(this.freqData, binHz, chord, CHORDS))
     }
 
-    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt }
+    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt, notes }
   }
 }

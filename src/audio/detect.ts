@@ -108,6 +108,27 @@ export function contrastAt(spec: ArrayLike<number>, binHz: number, f: number) {
   return peakAt(spec, binHz, f) - median(spec, toBin(f / LOCAL_FLOOR_SPAN, binHz), toBin(f * LOCAL_FLOOR_SPAN, binHz) + 1)
 }
 
+/**
+ * How far each of a chord's notes stands above the local noise right now (0 for muted strings).
+ * Bass strings also count their first overtone, since small mics barely hear their fundamental.
+ */
+export function noteLevels(spec: ArrayLike<number>, binHz: number, chord: Chord) {
+  return chordFrequencies(chord).map((f) =>
+    f === null ? 0 : f < BASS_BELOW_HZ ? Math.max(contrastAt(spec, binHz, f), contrastAt(spec, binHz, 2 * f) - HARMONIC_PENALTY[3]) : contrastAt(spec, binHz, f),
+  )
+}
+
+/** A picked string's note must jump at least this much from just before the pick. */
+export const PICK_RISE_DB = 6
+
+/**
+ * Did picking a single string make it ring? Judged by how much its note rose from just before the
+ * pick, not by whether it's there: when strings picked earlier are still ringing, their overtones
+ * already sit on this string's note (the A string's 3rd overtone is the high e), so presence proves
+ * nothing, but only the string itself makes it jump.
+ */
+export const pickRang = (before: number, after: number, threshold: number) => after - before >= PICK_RISE_DB && after >= threshold
+
 export const isNoiseLike = (spec: ArrayLike<number>, binHz: number) => flatness(spec, toBin(70, binHz), toBin(3000, binHz)) >= MAX_FLATNESS
 
 /**

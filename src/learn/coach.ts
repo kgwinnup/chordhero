@@ -90,26 +90,23 @@ export function coach(chord: Chord, strum: Strum): Hint {
 
   const s = pickDark(chord, dark)
   const prefix = dark.length > 1 ? `${dark.length} strings didn't ring. Start with the ${SPOKEN_STRING[s]}: ` : ''
+  return { tone: 'fix', string: s, text: prefix + stringFix(chord, s) }
+}
+
+/** Why one string of a chord isn't ringing, and how to fix it. */
+export function stringFix(chord: Chord, s: number) {
   const fret = chord.frets[s]
   if (fret === 0) {
     const culprit = s > 0 && chord.frets[s - 1] > 0 ? chord.fingers[s - 1] : 0
     if (culprit) {
-      return {
-        tone: 'fix',
-        string: s,
-        text: `${prefix}The open ${SPOKEN_STRING[s]} string is muted. Your ${FINGER[culprit]} on the ${SPOKEN_STRING[s - 1]} string is probably touching it: arch that finger and press with its tip.`,
-      }
+      return `The open ${SPOKEN_STRING[s]} string is muted. Your ${FINGER[culprit]} on the ${SPOKEN_STRING[s - 1]} string is probably touching it: arch that finger and press with its tip.`
     }
-    return { tone: 'fix', string: s, text: `${prefix}The open ${SPOKEN_STRING[s]} string isn't ringing. Make sure no finger or palm is resting on it.` }
+    return `The open ${SPOKEN_STRING[s]} string isn't ringing. Make sure no finger or palm is resting on it.`
   }
   if (chord.barre && chord.fingers[s] === 1 && fret === chord.barre.fret) {
-    return { tone: 'fix', string: s, text: `${prefix}The barre isn't pressing the ${SPOKEN_STRING[s]} string. Roll your index finger slightly onto its bony edge and squeeze.` }
+    return `The barre isn't pressing the ${SPOKEN_STRING[s]} string. Roll your index finger slightly onto its bony edge and squeeze.`
   }
-  return {
-    tone: 'fix',
-    string: s,
-    text: `${prefix}The ${SPOKEN_STRING[s]} string is muted or buzzing. Press harder with your ${FINGER[chord.fingers[s]] || 'finger'}, right behind the ${ordinal(fret)} fret.`,
-  }
+  return `The ${SPOKEN_STRING[s]} string is muted or buzzing. Press harder with your ${FINGER[chord.fingers[s]] || 'finger'}, right behind the ${ordinal(fret)} fret.`
 }
 
 /** The dark string most worth fixing first: an open string with a likely culprit, else the thinnest. */

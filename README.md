@@ -7,8 +7,9 @@ A Simply Guitar–style chord trainer that runs entirely in the browser. Build a
 - **Living fretboard.** A detailed neck (rosewood, frets, inlays, wound strings) shows exactly where your fingers go. Each string glows and shimmers when the mic hears it, and the next chord's shape ghosts in before you need it.
 - **Chord strip.** Upcoming chords slide toward you along the top. The current card shrinks as its beats pass.
 - **Guitar Hero–style scoring.** Every chord is graded on how many strings rang and how close to the beat you strummed (Perfect, Great, Good, OK, Miss), with combo multipliers, sparks, and a results screen with your best score.
-- **Beginner path** (the **Learn** button). Seven units take an absolute beginner through Em, Am, E, A, D, G and C. Each chord has three stages: learn the shape, drill the changes, then play a short song. Steps unlock in order and your progress is saved.
-  - **String coach.** While you learn a shape, every strum gets feedback on which string didn't ring and the likely reason (for example, a finger leaning on the next string, or not pressing hard enough behind the fret).
+- **Beginner path** (**Learn** in the **Play · Learn · Tune** switch at the top). Seven units take an absolute beginner through Em, Am, E, A, D, G and C. Each chord has three stages: learn the shape, drill the changes, then play a short song. Steps unlock in order and your progress is saved.
+  - **String check.** To learn a shape, you first pick each string on its own, low to high. A string counts only if its note jumps when you pick it, so a skipped or muted string can't slip through. (In a full strum, a missing string can hide behind another string's overtones.)
+  - **String coach.** Then you strum it. Every strum gets feedback on which string didn't ring and the likely reason (for example, a finger leaning on the next string, or not pressing hard enough behind the fret).
   - **One-minute changes.** Switch between two chords as many times as you can in 60 seconds. Only clean changes count, and your best is kept.
 - **Adaptive tempo** (in ⚙, off by default). The tempo goes up a little after a run of clean chords and comes down after misses.
 - **Presets.** Pick a song from the menu at the top, or choose *Build your own…* to make and save your own chord sequences. Each chord can last 1–8 beats.

@@ -67,6 +67,8 @@ export interface Heard {
   strings: boolean[]
   /** It sounds like the chord, and more like it than any other */
   soundsRight: boolean
+  /** Per string: dB its note stands above the noise */
+  notes: number[]
 }
 
 export interface UiState {
@@ -86,6 +88,9 @@ const MIN_STRINGS = 0.5
 const JUDGE_SECONDS = 0.3
 /** Onset detection lags the actual strum by roughly this much. */
 const INPUT_LATENCY = 0.03
+
+/** dB a string must stand above the noise: 24 strict … 6 lenient, 15 at the default sensitivity. */
+export const thresholdFor = (sensitivity: number) => 24 - (sensitivity / 100) * 18
 
 export function buildLayout(seq: SeqItem[]): Layout {
   let acc = 0
@@ -141,7 +146,7 @@ export function useGame(
     onTempoRef.current = onTempo
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false), heard: { at: 0, onset: 0, chordId: null, strings: Array(6).fill(false), soundsRight: false } })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false), heard: { at: 0, onset: 0, chordId: null, strings: Array(6).fill(false), soundsRight: false, notes: Array(6).fill(0) } })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
@@ -202,7 +207,7 @@ export function useGame(
       const st = internal.current
       const s = settingsRef.current
       const lay = layoutRef.current
-      const threshold = 24 - (s.sensitivity / 100) * 18 // 24 dB strict … 6 dB lenient, 15 by default
+      const threshold = thresholdFor(s.sensitivity)
       const now = engine.ctx.currentTime
       const minMatch = 0.8 - (s.sensitivity / 100) * 0.2
 
@@ -320,7 +325,7 @@ export function useGame(
       const a = engine.analyze(analysisChord, threshold)
       // It has to sound like this chord, and more like it than like any other chord.
       const soundsRight = a.gate && a.match >= minMatch - 0.1 && a.match >= a.rival - RIVAL_LEEWAY
-      v.heard = { at: now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings: a.strings, soundsRight }
+      v.heard = { at: now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings: a.strings, soundsRight, notes: a.notes }
 
       if (target && (v.phase === 'playing' || v.phase === 'countin')) {
         const inWindow = v.pos >= target.start - EARLY_BEATS && v.pos < target.end && !v.results.has(target.abs)
