@@ -87,6 +87,10 @@ export interface UiState {
   countdown: number | null
 }
 
+/** Shortest time between frames: caps the game loop at 60 fps (with a little slack for jitter). */
+export const MIN_FRAME_MS = 1000 / 60 - 2
+/** Between frames when nothing's playing or ringing: still quick enough to catch a strum. */
+export const IDLE_FRAME_MS = 1000 / 15
 /** How early (in beats) a strum may land before a chord's start and still count. */
 export const EARLY_BEATS = 0.5
 /** Share of a chord's strings that must ring before it can score at all. */
@@ -212,10 +216,18 @@ export function useGame(
   useEffect(() => {
     if (!engine) return
     let raf = 0
+    let lastFrame = -Infinity
 
-    const frame = () => {
+    const frame = (t: number) => {
       raf = requestAnimationFrame(frame)
       const v = view.current
+      const live = v.phase === 'playing' || v.phase === 'countin'
+      // Save power: at most 60 frames a second (120 Hz screens gain nothing for audio), only a few
+      // while idle and quiet, and none while the audio is asleep with no song to run.
+      if (!live && !engine.awake) return
+      const quiet = !live && !v.light.tone && !v.ringing.some(Boolean)
+      if (t - lastFrame < (quiet ? IDLE_FRAME_MS : MIN_FRAME_MS)) return
+      lastFrame = t
       const st = internal.current
       const s = settingsRef.current
       const lay = layoutRef.current

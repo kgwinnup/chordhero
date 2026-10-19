@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { eventByAbs, type GameView, type Layout } from '../game/useGame'
+import { eventByAbs, type GameView, type Layout, MIN_FRAME_MS } from '../game/useGame'
 import type { Grade } from '../game/scoring'
 import type { Tone } from '../game/strumLight'
 import { type Chord, guitar, STRING_NAMES } from '../music/chords'
@@ -88,9 +88,27 @@ export function Neck({ layout, view, loop }: Props) {
     let lastT = performance.now()
     let wood: HTMLCanvasElement | null = null
     let woodKey = ''
+    /** What the last frame showed, while nothing was moving; a frame that would look the same is skipped. */
+    let stillKey = ''
+    let lastLayout: Layout | null = null
+    let layoutVersion = 0
+    // The theme's colors never change, so read each once rather than restyling every frame.
+    const colors = new Map<string, string>()
+    let css: CSSStyleDeclaration | null = null
+    const color = (name: string) => {
+      let c = colors.get(name)
+      if (c === undefined) {
+        css ??= getComputedStyle(canvas)
+        c = css.getPropertyValue(name).trim()
+        colors.set(name, c)
+      }
+      return c
+    }
 
     const draw = (t: number) => {
       raf = requestAnimationFrame(draw)
+      // At most 60 frames a second: a 120 Hz screen would double the work for no visible gain.
+      if (t - lastT < MIN_FRAME_MS) return
       const dt = Math.min(0.05, (t - lastT) / 1000)
       lastT = t
       const dpr = window.devicePixelRatio || 1
@@ -100,11 +118,19 @@ export function Neck({ layout, view, loop }: Props) {
         canvas.width = Math.round(w * dpr)
         canvas.height = Math.round(h * dpr)
       }
-      const css = getComputedStyle(canvas)
-      const color = (name: string) => css.getPropertyValue(name).trim()
       const { layout: lay, loop: looping } = propsRef.current
       const v = view.current
       const playing = v.phase === 'playing' || v.phase === 'countin'
+
+      // Nothing moving (no song, no effects, no string vibrating): redraw only when what's shown changes.
+      if (lay !== lastLayout) {
+        lastLayout = lay
+        layoutVersion++
+      }
+      const moving = playing || beatFlash > 0 || flash > 0 || shake > 0 || rings.length > 0 || particles.length > 0 || v.ringing.some(Boolean) || v.light.mutedHit.some(Boolean) || (!!v.lastJudgment && v.lastJudgment.id !== seenJudgment)
+      const key = moving ? '' : [canvas.width, canvas.height, guitar.id, layoutVersion, looping, v.pos, v.display?.id, v.display?.frets.join(), v.tone, woodKey].join('|')
+      if (key && key === stillKey) return
+      stillKey = key
       const g = geometry(w, h)
 
       if (playing && Math.floor(v.pos) !== lastBeat) {
@@ -147,10 +173,10 @@ export function Neck({ layout, view, loop }: Props) {
 
       drawStrip(ctx, g, v, lay, looping, playing, color)
 
-      const key = `${w}x${h}@${dpr}/${guitar.id}`
-      if (!wood || woodKey !== key) {
+      const woodWanted = `${w}x${h}@${dpr}/${guitar.id}`
+      if (!wood || woodKey !== woodWanted) {
         wood = paintNeck(g, dpr, color)
-        woodKey = key
+        woodKey = woodWanted
       }
       ctx.drawImage(wood, 0, 0, w, h)
 
@@ -239,6 +265,7 @@ export function Neck({ layout, view, loop }: Props) {
     // The cached neck has text on it: repaint once the web fonts arrive.
     document.fonts?.ready.then(() => {
       woodKey = ''
+      stillKey = ''
     })
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)

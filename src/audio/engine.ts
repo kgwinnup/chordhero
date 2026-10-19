@@ -67,8 +67,44 @@ export class AudioEngine {
   clickVolume = 0.5
   crowd!: Crowd
 
+  /** AudioContext time until which something we scheduled may still be sounding. */
+  private soundUntil = 0
+  private sleepTimer: ReturnType<typeof setTimeout> | undefined
+
   constructor() {
     this.build()
+    // Hidden: nothing to show and nobody looking, so stop listening and let the audio hardware rest.
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        const hidden = document.visibilityState === 'hidden'
+        this.micStream?.getAudioTracks().forEach((t) => (t.enabled = !hidden))
+        if (hidden) void this.ctx.suspend().catch(() => {})
+        else if (this.micStream) void this.resume().catch(() => {})
+      })
+    }
+  }
+
+  /**
+   * Suspend the audio context once nothing is playing, so the audio hardware can sleep. For when
+   * no mic and no song needs it; anything that plays a sound wakes it again.
+   */
+  sleepWhenQuiet() {
+    clearTimeout(this.sleepTimer)
+    const check = () => {
+      if (this.micStream || this.ctx.state !== 'running') return
+      // Let the crowd's fade and any ringing strum finish first.
+      if (this.crowd.running) this.soundUntil = Math.max(this.soundUntil, this.ctx.currentTime + 3)
+      const left = this.soundUntil - this.ctx.currentTime
+      if (left > 0) this.sleepTimer = setTimeout(check, left * 1000 + 100)
+      else void this.ctx.suspend().catch(() => {})
+    }
+    this.sleepTimer = setTimeout(check, 2000)
+  }
+
+  /** Something is about to sound until `until` (AudioContext time): keep (or get) the context running. */
+  private sounding(until: number) {
+    this.soundUntil = Math.max(this.soundUntil, until)
+    if (this.ctx.state === 'suspended' && document.visibilityState !== 'hidden') void this.resume().catch(() => {})
   }
 
   get ctx() {
@@ -118,11 +154,17 @@ export class AudioEngine {
     this.lastOnsetAt = -Infinity
   }
 
+  /** Whether the audio clock is running (not suspended to save power). */
+  get awake() {
+    return this.ctx.state === 'running'
+  }
+
   get micActive() {
     return this.micStream !== null
   }
 
   async resume() {
+    clearTimeout(this.sleepTimer)
     if (this.ctx.state !== 'running') await this.ctx.resume()
   }
 
@@ -160,10 +202,12 @@ export class AudioEngine {
   }
 
   /**
-   * The pitch of a single plucked string, from the latest input (call after `analyze`).
-   * Null when it's quiet or unclear. See `yinPitch`.
+   * The pitch of a single plucked string, from the latest input. Null when it's quiet or
+   * unclear. See `yinPitch`.
    */
   pitch(range?: PitchRange): Pitch | null {
+    // Read fresh samples: the game loop analyses only a few times a second while it's quiet.
+    this.analyser.getFloatTimeDomainData(this.timeData)
     return yinPitch(this.timeData, this.ctx.sampleRate, range)
   }
 
@@ -179,6 +223,7 @@ export class AudioEngine {
   /** Schedule a metronome click at AudioContext time `when`. */
   click(when: number, accent: boolean) {
     if (this.clickVolume <= 0) return
+    this.sounding(when + 0.1)
     const osc = this.ctx.createOscillator()
     const gain = this.ctx.createGain()
     osc.frequency.value = accent ? 1600 : 1000
@@ -195,6 +240,7 @@ export class AudioEngine {
    * `skip` lists strings to leave out, to imitate a sloppy strum.
    */
   strum(chord: Chord, when = this.ctx.currentTime, analyse = false, skip: number[] = []) {
+    this.sounding(when + 3)
     const key = `${chord.frets.join()}:${skip.join()}`
     let buf = this.strumCache.get(key)
     if (!buf) {
@@ -210,6 +256,7 @@ export class AudioEngine {
 
   /** Play one note, e.g. a tuner's reference pitch. */
   pluck(midi: number, when = this.ctx.currentTime, analyse = false) {
+    this.sounding(when + 3)
     const src = this.ctx.createBufferSource()
     src.buffer = this.synthesize([midi])
     src.connect(this.output)
@@ -296,7 +343,8 @@ export class AudioEngine {
     if (chord) {
       notes = noteLevels(this.freqData, binHz, chord)
       const allowed = gate && !isNoiseLike(this.freqData, binHz)
-      const result = scoreStrings(this.freqData, binHz, chord, threshold, allowed, this.wasIndependent)
+      // Too quiet or just noise: nothing can ring, so skip the costly per-string scoring.
+      const result = allowed ? scoreStrings(this.freqData, binHz, chord, threshold, allowed, this.wasIndependent) : silent(chord.frets.length)
       scores = result.scores
       this.wasIndependent = result.independent
       for (let s = 0; s < n; s++) {
@@ -317,3 +365,6 @@ export class AudioEngine {
     return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt, notes, muted }
   }
 }
+
+/** String scores for a frame where nothing may ring. */
+const silent = (n: number) => ({ scores: new Array<number>(n).fill(0), ringing: new Array<boolean>(n).fill(false), independent: new Array<boolean>(n).fill(false) })

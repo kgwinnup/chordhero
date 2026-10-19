@@ -38,6 +38,9 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
+/** Tuning or learning with no strum or tap for this long lets the screen sleep. */
+const IDLE_SLEEP_MS = 3 * 60_000
+
 /** Whether the mic was on when the app was last used. */
 const MIC_KEY = 'chordhero.mic'
 
@@ -127,6 +130,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- applaud the score at the moment the song ends
   }, [engine, settings.crowd, running, phase])
   useEffect(() => engine.crowd.setExcitement(score.rock), [engine, score.rock])
+  // No mic and no song: let the audio hardware sleep once the last sound has finished.
+  useEffect(() => {
+    if (!running && mic !== 'on') engine.sleepWhenQuiet()
+  }, [engine, running, mic])
   const lastJudgment = score.last
   useEffect(() => {
     if (!lastJudgment) return
@@ -170,7 +177,8 @@ export default function App() {
   // Mobile browsers only let audio start from a tap; resume on any tap in case the
   // engine was rebuilt (after the mic opened) outside one.
   useEffect(() => {
-    const unlock = () => void engine.resume().catch(() => {})
+    // Only while the mic is on: otherwise the audio sleeps until something plays.
+    const unlock = () => void (engine.micActive && engine.resume().catch(() => {}))
     document.addEventListener('pointerdown', unlock)
     return () => document.removeEventListener('pointerdown', unlock)
   }, [engine])
@@ -243,8 +251,31 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
   const [screen, setScreen] = useState<'play' | 'tune' | 'learn'>('play')
-  // Your hands are on the guitar, not the phone: keep the screen on while playing, tuning or learning.
-  useEffect(() => keepAwake(running || screen !== 'play'), [running, screen])
+  // Your hands are on the guitar, not the phone: keep the screen on while playing, tuning or
+  // learning. But let it sleep once tuning or learning has gone quiet (no strum, no tap) for a while.
+  const [idle, setIdle] = useState(false)
+  useEffect(() => {
+    if (running || screen === 'play') return setIdle(false)
+    let lastActive = performance.now()
+    let lastOnset = engine.lastOnsetAt
+    const active = () => {
+      lastActive = performance.now()
+      setIdle(false)
+    }
+    const check = () => {
+      if (engine.lastOnsetAt !== lastOnset) {
+        lastOnset = engine.lastOnsetAt
+        active()
+      } else if (performance.now() - lastActive > IDLE_SLEEP_MS) setIdle(true)
+    }
+    const id = setInterval(check, 5000)
+    document.addEventListener('pointerdown', active)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('pointerdown', active)
+    }
+  }, [engine, running, screen])
+  useEffect(() => keepAwake(running || (screen !== 'play' && !idle)), [running, screen, idle])
   const goTo = (to: 'play' | 'tune' | 'learn') => {
     if (screen === to) return
     stop()
