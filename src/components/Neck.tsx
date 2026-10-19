@@ -43,6 +43,7 @@ interface Geo {
   stringY: (k: number) => number
 }
 
+const MULTIPLIER_VAR = ['--mult-1', '--mult-1', '--mult-2', '--mult-3', '--mult-4']
 const GRADE_VAR: Record<Grade, string> = {
   perfect: '--perfect',
   great: '--great',
@@ -125,7 +126,7 @@ export function Neck({ layout, view, loop }: Props) {
           flashColor = c
           for (const p of fingerPoints(g, chord)) {
             rings.push({ x: p.x, y: p.y, life: 0, color: c })
-            for (let i = 0; i < BURST[j.grade]; i++) {
+            for (let i = 0; i < BURST[j.grade] * (1 + (j.multiplier - 1) * 0.5); i++) {
               const a = Math.random() * Math.PI * 2
               const speed = 40 + Math.random() * (j.grade === 'perfect' ? 260 : 170)
               particles.push({ x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 60, life: 0, max: 0.4 + Math.random() * 0.5, size: 1.2 + Math.random() * 2.4, color: c })
@@ -159,6 +160,37 @@ export function Neck({ layout, view, loop }: Props) {
         ctx.fillRect(g.nutX - 6, g.neckTop, 8, g.neckBottom - g.neckTop)
         ctx.shadowBlur = 0
         ctx.globalAlpha = 1
+      }
+
+      // The neck's edges heat up with the multiplier; at ×4 embers rise off the board.
+      if (playing && v.multiplier >= 2) {
+        const heat = color(MULTIPLIER_VAR[Math.min(4, v.multiplier)])
+        const flicker = v.multiplier >= 4 ? 0.6 + Math.random() * 0.4 : 1
+        ctx.strokeStyle = heat
+        ctx.shadowColor = heat
+        ctx.shadowBlur = 10 + v.multiplier * 6
+        ctx.globalAlpha = (0.25 + (v.multiplier - 1) * 0.22) * flicker
+        ctx.lineWidth = 2 + v.multiplier
+        for (const y of [g.neckTop - 2, g.neckBottom + 2]) {
+          ctx.beginPath()
+          ctx.moveTo(g.nutX, y)
+          ctx.lineTo(g.boardRight, y)
+          ctx.stroke()
+        }
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = 1
+        if (v.multiplier >= 4 && Math.random() < 0.6) {
+          particles.push({
+            x: g.nutX + Math.random() * (g.boardRight - g.nutX),
+            y: g.neckBottom,
+            vx: (Math.random() - 0.5) * 30,
+            vy: -60 - Math.random() * 120,
+            life: 0,
+            max: 0.6 + Math.random() * 0.6,
+            size: 1 + Math.random() * 2,
+            color: Math.random() < 0.5 ? color('--accent') : color('--accent-3'),
+          })
+        }
       }
 
       const chord = v.display
@@ -289,7 +321,7 @@ function drawStrip(ctx: CanvasRenderingContext2D, g: Geo, v: GameView, lay: Layo
     ctx.clip()
     ctx.fillStyle = current ? color('--card-now-text') : color('--text')
     const size = Math.min(current ? (compact ? 28 : 34) : compact ? 18 : 22, (bottom - top) * (current ? 0.62 : 0.48))
-    ctx.font = `800 ${size}px 'Fraunces Variable', Georgia, serif`
+    ctx.font = `italic 700 ${size * 1.15}px 'Barlow Condensed', system-ui, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.textAlign = 'left'
     ctx.fillText(e.chord.name, x0 + 10, (top + bottom) / 2 - 2)
@@ -319,20 +351,21 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
 
   // Headstock stub behind the labels.
   const head = ctx.createLinearGradient(0, top, 0, bottom)
-  head.addColorStop(0, '#2a1c13')
-  head.addColorStop(0.5, '#3b281b')
-  head.addColorStop(1, '#2a1c13')
+  head.addColorStop(0, '#050506')
+  head.addColorStop(0.45, '#26262b')
+  head.addColorStop(0.55, '#121214')
+  head.addColorStop(1, '#050506')
   ctx.fillStyle = head
   roundRect(ctx, 2, top - 6, nutX, bottom - top + 12, 12)
   ctx.fill()
 
-  // Rosewood board.
+  // Ebony board: near-black with a faint warm cast.
   const board = ctx.createLinearGradient(0, top, 0, bottom)
-  board.addColorStop(0, '#3a2418')
-  board.addColorStop(0.12, '#5a3a26')
-  board.addColorStop(0.5, '#64412b')
-  board.addColorStop(0.88, '#5a3a26')
-  board.addColorStop(1, '#3a2418')
+  board.addColorStop(0, '#0b0908')
+  board.addColorStop(0.12, '#1a1614')
+  board.addColorStop(0.5, '#1f1a17')
+  board.addColorStop(0.88, '#1a1614')
+  board.addColorStop(1, '#0b0908')
   ctx.fillStyle = board
   ctx.fillRect(nutX, top, right - nutX, bottom - top)
 
@@ -346,7 +379,7 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
     const amp = 0.6 + rand() * 2.2
     const freq = 0.004 + rand() * 0.012
     const phase = rand() * 10
-    ctx.strokeStyle = rand() < 0.6 ? `rgba(20, 10, 4, ${0.06 + rand() * 0.12})` : `rgba(160, 110, 70, ${0.04 + rand() * 0.08})`
+    ctx.strokeStyle = rand() < 0.6 ? `rgba(0, 0, 0, ${0.1 + rand() * 0.2})` : `rgba(90, 70, 55, ${0.03 + rand() * 0.06})`
     ctx.lineWidth = 0.4 + rand() * 1.4
     ctx.beginPath()
     for (let x = nutX; x <= right; x += 6) {
@@ -357,32 +390,44 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
     ctx.stroke()
   }
   // Pores.
-  for (let i = 0; i < (right - nutX) * (bottom - top) * 0.004; i++) {
-    ctx.fillStyle = `rgba(15, 8, 3, ${0.25 + rand() * 0.35})`
+  for (let i = 0; i < (right - nutX) * (bottom - top) * 0.002; i++) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.3 + rand() * 0.4})`
     ctx.fillRect(nutX + rand() * (right - nutX), top + rand() * (bottom - top), 1 + rand() * 2.5, 0.8)
   }
   // Wear where hands play most: a soft sheen in the first frets.
   const sheen = ctx.createRadialGradient(g.fretX(2), (top + bottom) / 2, 4, g.fretX(2), (top + bottom) / 2, (right - nutX) * 0.45)
-  sheen.addColorStop(0, 'rgba(255, 220, 170, 0.07)')
-  sheen.addColorStop(1, 'rgba(255, 220, 170, 0)')
+  sheen.addColorStop(0, 'rgba(255, 255, 255, 0.05)')
+  sheen.addColorStop(1, 'rgba(255, 255, 255, 0)')
   ctx.fillStyle = sheen
   ctx.fillRect(nutX, top, right - nutX, bottom - top)
   ctx.restore()
 
-  // Pearl inlays (double dot would be at 12, off screen).
+  // Abalone inlays: an iridescent swirl of teal, violet and green (12th fret's double dot is off screen).
   const mid = (top + bottom) / 2
   for (const f of INLAYS) {
     const x = (g.fretX(f - 1) + g.fretX(f)) / 2
     if (x > right) continue
-    const r = Math.min(g.gap * 0.28, 9)
-    const pearl = ctx.createRadialGradient(x - r * 0.3, mid - r * 0.3, 1, x, mid, r)
-    pearl.addColorStop(0, '#fffaf0')
-    pearl.addColorStop(0.5, '#e8ddd0')
-    pearl.addColorStop(0.8, '#c9d6dc')
-    pearl.addColorStop(1, '#b8a99a')
-    ctx.fillStyle = pearl
+    const r = Math.min(g.gap * 0.3, 10)
+    const shell = ctx.createConicGradient(rand() * Math.PI * 2, x, mid)
+    for (const [stop, c] of [
+      [0, '#3fd0c9'],
+      [0.18, '#7a5cff'],
+      [0.36, '#2fae7a'],
+      [0.52, '#e07ad8'],
+      [0.7, '#2b8fd6'],
+      [0.86, '#9cf0a8'],
+      [1, '#3fd0c9'],
+    ] as const)
+      shell.addColorStop(stop, c)
+    ctx.fillStyle = shell
     ctx.beginPath()
     ctx.arc(x, mid, r, 0, Math.PI * 2)
+    ctx.fill()
+    const gloss = ctx.createRadialGradient(x - r * 0.35, mid - r * 0.35, 0, x, mid, r)
+    gloss.addColorStop(0, 'rgba(255, 255, 255, 0.55)')
+    gloss.addColorStop(0.6, 'rgba(255, 255, 255, 0)')
+    gloss.addColorStop(1, 'rgba(0, 0, 0, 0.35)')
+    ctx.fillStyle = gloss
     ctx.fill()
   }
 
@@ -392,20 +437,24 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
     ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'
     ctx.fillRect(x + 2, top, 3, bottom - top)
     const wire = ctx.createLinearGradient(x - 2.5, 0, x + 2.5, 0)
-    wire.addColorStop(0, '#7d7a75')
-    wire.addColorStop(0.35, '#f4f1ea')
-    wire.addColorStop(0.6, '#b9b5ad')
-    wire.addColorStop(1, '#6a6762')
+    wire.addColorStop(0, '#6e6e76')
+    wire.addColorStop(0.35, '#ffffff')
+    wire.addColorStop(0.6, '#c4c4cc')
+    wire.addColorStop(1, '#5a5a62')
     ctx.fillStyle = wire
     ctx.fillRect(x - 2.5, top - 1, 5, bottom - top + 2)
   }
 
   // Cream binding along both edges.
-  for (const y of [top - 3, bottom]) {
-    ctx.fillStyle = '#e9dcc0'
-    ctx.fillRect(nutX, y, right - nutX, 3)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'
-    ctx.fillRect(nutX, y + 3, right - nutX, 1)
+  // Ivory binding with a black-and-white purfling line.
+  for (const [y, dir] of [
+    [top - 4, 1],
+    [bottom, -1],
+  ] as const) {
+    ctx.fillStyle = '#efe9da'
+    ctx.fillRect(nutX, y, right - nutX, 4)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(nutX, dir > 0 ? y + 4 : y - 1, right - nutX, 1)
   }
 
   // Bone nut with string slots.
@@ -423,7 +472,7 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
   for (let k = 0; k < 6; k++) {
     const y = g.stringY(k)
     ctx.fillStyle = color('--muted')
-    ctx.font = `700 ${Math.max(11, Math.min(15, g.gap * 0.45))}px 'Outfit Variable', system-ui, sans-serif`
+    ctx.font = `700 ${Math.max(12, Math.min(17, g.gap * 0.5))}px 'Barlow Condensed', system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(STRING_NAMES[k], g.labelX + 4, y)
@@ -431,7 +480,7 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
 
   // Fret numbers.
   ctx.fillStyle = color('--muted')
-  ctx.font = "600 12px 'Outfit Variable', system-ui, sans-serif"
+  ctx.font = "700 13px 'Barlow Condensed', system-ui, sans-serif"
   for (let f = 1; f <= Math.floor(VISIBLE_FRETS); f++) {
     ctx.fillText(String(f), (g.fretX(f - 1) + g.fretX(f)) / 2, bottom + 13)
   }
@@ -584,7 +633,7 @@ function drawShape(
     ctx.shadowBlur = 0
     ctx.shadowOffsetY = 0
     ctx.fillStyle = '#2a1608'
-    ctx.font = `800 ${r * 1.05}px 'Outfit Variable', system-ui, sans-serif`
+    ctx.font = `700 ${r * 1.15}px 'Barlow Condensed', system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(String(chord.fingers[k] || ''), x, y + 1)

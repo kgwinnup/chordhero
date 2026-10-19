@@ -149,8 +149,8 @@ export default function App() {
       <header className="topbar">
         <h1>
           <span className="logo" aria-hidden>
-            ◉
-          </span>{' '}
+            ⚡
+          </span>
           ChordHero
         </h1>
         <div className="preset-picker">
@@ -248,7 +248,7 @@ export default function App() {
 
       <ScoreHud score={score} />
 
-      <section className={`stage ${score.multiplier >= 4 ? 'on-fire' : ''}`}>
+      <section className={`stage heat-${score.multiplier}`}>
         <Neck layout={layout} view={view} loop={settings.loop} />
         {ui.countdown !== null && (
           <div className="countdown" key={ui.countdown}>

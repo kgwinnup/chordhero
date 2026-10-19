@@ -25,6 +25,8 @@ export interface ScoreState {
   judged: number
   counts: Record<Grade, number>
   last: Judgment | null
+  /** 0..1 crowd meter: climbs with good chords, drops on misses. Starts in the middle. */
+  rock: number
 }
 
 export const BASE_POINTS = 100
@@ -57,6 +59,7 @@ export const emptyScore = (): ScoreState => ({
   judged: 0,
   counts: { perfect: 0, great: 0, good: 0, ok: 0, miss: 0 },
   last: null,
+  rock: 0.5,
 })
 
 export const multiplierFor = (combo: number) => Math.min(MAX_MULTIPLIER, 1 + Math.floor(combo / COMBO_STEP))
@@ -119,6 +122,7 @@ export function applyJudgment(score: ScoreState, j: Judgment): ScoreState {
     judged: score.judged + 1,
     counts: { ...score.counts, [j.grade]: score.counts[j.grade] + 1 },
     last: j,
+    rock: Math.max(0, Math.min(1, score.rock + (j.grade === 'miss' ? -0.14 : (j.quality - 0.45) * 0.16))),
   }
 }
 

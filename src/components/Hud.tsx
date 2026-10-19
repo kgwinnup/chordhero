@@ -40,10 +40,29 @@ export function ScoreHud({ score }: { score: ScoreState }) {
         <span className="hud-label">Combo</span>
         <b className={score.combo >= COMBO_STEP ? 'hot' : ''}>{score.combo}</b>
       </div>
-      <div className="hud-stat">
+      <div className="hud-stat hud-accuracy">
         <span className="hud-label">Accuracy</span>
         <b>{accuracy === null ? '—' : `${accuracy}%`}</b>
       </div>
+      <RockMeter value={score.rock} />
+    </div>
+  )
+}
+
+/** Half-dial crowd meter: red on the left, green on the right. */
+function RockMeter({ value }: { value: number }) {
+  const angle = -90 + value * 180
+  const mood = value < 0.3 ? 'cold' : value > 0.7 ? 'hot' : ''
+  return (
+    <div className={`rock ${mood}`} aria-label={`Crowd meter ${Math.round(value * 100)}%`}>
+      <svg viewBox="0 0 64 38" aria-hidden>
+        <path d="M6 34 A26 26 0 0 1 22.5 9.8" className="rock-red" />
+        <path d="M22.5 9.8 A26 26 0 0 1 41.5 9.8" className="rock-yellow" />
+        <path d="M41.5 9.8 A26 26 0 0 1 58 34" className="rock-green" />
+        <line x1="32" y1="34" x2="32" y2="12" className="rock-needle" style={{ transform: `rotate(${angle}deg)` }} />
+        <circle cx="32" cy="34" r="3.5" className="rock-hub" />
+      </svg>
+      <span className="hud-label">Crowd</span>
     </div>
   )
 }
@@ -78,11 +97,12 @@ export function Results({ score, best, isNewBest, onReplay, onClose }: { score: 
   const points = useCountUp(score.points)
   return (
     <div className="results-backdrop" role="dialog" aria-label="Results">
-      <div className="results">
+      <div className="results poster">
+        <div className="poster-kicker">ChordHero · live tonight</div>
         <div className="stars" aria-label={`${stars} of 5 stars`}>
           {Array.from({ length: 5 }, (_, i) => (
             <span key={i} className={i < stars ? 'on' : ''} style={{ animationDelay: `${0.15 + i * 0.12}s` }}>
-              ★
+              <i />
             </span>
           ))}
         </div>
