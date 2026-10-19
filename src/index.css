@@ -1425,7 +1425,7 @@ h3 {
 .tune-instruments {
   flex: 2;
   min-width: min(100%, 420px);
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
 }
 .tune-pickers select {
   flex: 1;
@@ -1449,6 +1449,9 @@ h3 {
 .segmented button.on {
   background: var(--flame);
   color: #1a0700;
+}
+.guitar-picker {
+  grid-template-columns: repeat(3, 1fr);
 }
 .tune-body {
   display: grid;

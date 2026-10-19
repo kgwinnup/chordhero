@@ -1,4 +1,4 @@
-import { type Chord, CHORDS, midiToFreq, stringMidi } from '../music/chords'
+import { type Chord, CHORDS, MAX_STRINGS, midiToFreq, stringMidi } from '../music/chords'
 import { chordFit, isNoiseLike, mutedRinging, noteLevels, scoreStrings } from './detect'
 import { type Pitch, type PitchRange, yinPitch } from './pitch'
 
@@ -53,12 +53,12 @@ export class AudioEngine {
   private micStream: MediaStream | null = null
   private freqData!: Float32Array<ArrayBuffer>
   private timeData!: Float32Array<ArrayBuffer>
-  private ringAt: number[] = new Array(6).fill(-Infinity)
+  private ringAt: number[] = new Array(MAX_STRINGS).fill(-Infinity)
   /** Per string: consecutive frames it has read as ringing, and whether it had its own evidence last frame. */
-  private streak: number[] = new Array(6).fill(0)
-  private mutedAt: number[] = new Array(6).fill(-Infinity)
-  private mutedStreak: number[] = new Array(6).fill(0)
-  private wasIndependent: boolean[] = new Array(6).fill(false)
+  private streak: number[] = new Array(MAX_STRINGS).fill(0)
+  private mutedAt: number[] = new Array(MAX_STRINGS).fill(-Infinity)
+  private mutedStreak: number[] = new Array(MAX_STRINGS).fill(0)
+  private wasIndependent: boolean[] = new Array(MAX_STRINGS).fill(false)
   private ringChordId: string | null = null
   private rmsHistory: { t: number; v: number }[] = []
   private strumCache = new Map<string, AudioBuffer>()
@@ -189,7 +189,7 @@ export class AudioEngine {
    * `skip` lists strings to leave out, to imitate a sloppy strum.
    */
   strum(chord: Chord, when = this.ctx.currentTime, analyse = false, skip: number[] = []) {
-    const key = `${chord.id}:${skip.join()}`
+    const key = `${chord.frets.join()}:${skip.join()}`
     let buf = this.strumCache.get(key)
     if (!buf) {
       buf = this.synthesizeStrum(chord, skip)
@@ -269,8 +269,10 @@ export class AudioEngine {
     if (gate && level > recentMin * 2 && now - this.lastOnsetAt > 0.25) this.lastOnsetAt = now
 
     const binHz = this.ctx.sampleRate / FFT_SIZE
-    if (chord?.id !== this.ringChordId) {
-      this.ringChordId = chord?.id ?? null
+    // Keyed by string count too: the same chord on another guitar is a different shape.
+    const ringKey = chord ? `${chord.id}/${chord.frets.length}` : null
+    if (ringKey !== this.ringChordId) {
+      this.ringChordId = ringKey
       this.ringAt.fill(-Infinity)
       this.streak.fill(0)
       this.mutedAt.fill(-Infinity)
@@ -278,26 +280,27 @@ export class AudioEngine {
       this.wasIndependent.fill(false)
     }
 
-    const strings = new Array<boolean>(6).fill(false)
-    const muted = new Array<boolean>(6).fill(false)
-    let scores = new Array<number>(6).fill(0)
+    const n = chord?.frets.length ?? MAX_STRINGS
+    const strings = new Array<boolean>(n).fill(false)
+    const muted = new Array<boolean>(n).fill(false)
+    let scores = new Array<number>(n).fill(0)
     let match = 0
     let rival = 0
-    let notes = new Array<number>(6).fill(0)
+    let notes = new Array<number>(n).fill(0)
     if (chord) {
       notes = noteLevels(this.freqData, binHz, chord)
       const allowed = gate && !isNoiseLike(this.freqData, binHz)
       const result = scoreStrings(this.freqData, binHz, chord, threshold, allowed, this.wasIndependent)
       scores = result.scores
       this.wasIndependent = result.independent
-      for (let s = 0; s < 6; s++) {
+      for (let s = 0; s < n; s++) {
         // A string lights after reading as ringing a few frames in a row, then holds briefly.
         this.streak[s] = result.ringing[s] ? this.streak[s] + 1 : 0
         if (this.streak[s] >= PERSIST_FRAMES) this.ringAt[s] = now
         strings[s] = now - this.ringAt[s] < HOLD_SECONDS
       }
       const hit = mutedRinging(this.freqData, binHz, chord, threshold, allowed)
-      for (let s = 0; s < 6; s++) {
+      for (let s = 0; s < n; s++) {
         this.mutedStreak[s] = hit[s] ? this.mutedStreak[s] + 1 : 0
         if (this.mutedStreak[s] >= PERSIST_FRAMES) this.mutedAt[s] = now
         muted[s] = now - this.mutedAt[s] < HOLD_SECONDS

@@ -1,4 +1,5 @@
 import type { Grade } from './scoring'
+import { OPEN_MIDI } from '../music/chords'
 
 /**
  * How brightly the neck lights the strings that rang: dim while a strum is being listened to,
@@ -46,7 +47,7 @@ export interface Frame {
   muted?: boolean[]
 }
 
-const none = () => Array<boolean>(6).fill(false)
+const none = () => Array<boolean>(OPEN_MIDI.length).fill(false)
 
 export const emptyLight = (): StrumLight => ({
   chordId: null,

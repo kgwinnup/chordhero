@@ -15,11 +15,12 @@ describe('instruments and tunings', () => {
     expect(labels('ukulele', 'standard')).toEqual(['G4', 'C4', 'E4', 'A4'])
   })
 
-  it('match the headstock: six pegs for guitars, four for bass and ukulele', () => {
+  it('match the headstock: six pegs for guitars, seven or three for those guitars, four for bass and ukulele', () => {
+    const STRINGS: Record<string, number> = { bass: 4, ukulele: 4, seven: 7, three: 3 }
     for (const inst of INSTRUMENTS) {
-      const strings = ['bass', 'ukulele'].includes(inst.id) ? 4 : 6
+      const strings = STRINGS[inst.id] ?? 6
       for (const t of inst.tunings) expect(t.notes, `${inst.name} ${t.name}`).toHaveLength(strings)
-      expect(['three-a-side', 'three-a-side-outer-near', 'six-in-line'].includes(inst.layout)).toBe(strings === 6)
+      expect(['three-a-side', 'three-a-side-outer-near', 'six-in-line'].includes(inst.layout)).toBe(strings >= 6)
     }
   })
 

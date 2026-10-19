@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { eventByAbs, type GameView, type Layout } from '../game/useGame'
 import type { Grade } from '../game/scoring'
 import type { Tone } from '../game/strumLight'
-import { type Chord, STRING_NAMES } from '../music/chords'
+import { type Chord, guitar, STRING_NAMES } from '../music/chords'
 
 interface Props {
   layout: Layout
@@ -61,9 +61,6 @@ const BURST: Record<Grade, number> = { perfect: 16, great: 11, good: 7, ok: 4, m
 /** The board shows the nut through a little past the 5th fret. */
 const VISIBLE_FRETS = 5.6
 const INLAYS = [3, 5, 7, 9]
-/** String thickness in px, low E → high e. */
-const GAUGE = [4.2, 3.5, 2.8, 2.1, 1.6, 1.25]
-const WOUND = [true, true, true, false, false, false]
 
 /**
  * The play area: a strip of chord cards sliding toward "now" on top, and a detailed
@@ -150,7 +147,7 @@ export function Neck({ layout, view, loop }: Props) {
 
       drawStrip(ctx, g, v, lay, looping, playing, color)
 
-      const key = `${w}x${h}@${dpr}`
+      const key = `${w}x${h}@${dpr}/${guitar.id}`
       if (!wood || woodKey !== key) {
         wood = paintNeck(g, dpr, color)
         woodKey = key
@@ -264,8 +261,9 @@ function geometry(w: number, h: number): Geo {
   const scale = 1 - Math.pow(2, -VISIBLE_FRETS / 12)
   const fretX = (n: number) => nutX + ((boardRight - nutX) * (1 - Math.pow(2, -n / 12))) / scale
   const edge = (neckBottom - neckTop) * 0.085
-  const gap = (neckBottom - neckTop - edge * 2) / 5
-  const stringY = (k: number) => neckTop + edge + (5 - k) * gap // high e on top, like tab
+  const last = STRING_NAMES.length - 1
+  const gap = (neckBottom - neckTop - edge * 2) / last
+  const stringY = (k: number) => neckTop + edge + (last - k) * gap // high e on top, like tab
   return { w, h, stripH, neckTop, neckBottom, nutX, boardRight, labelX, markerX, gap, fretX, stringY }
 }
 
@@ -519,10 +517,10 @@ function paintNeck(g: Geo, dpr: number, color: (n: string) => string): HTMLCanva
   roundRect(ctx, nutX - 8, top - 4, 9, bottom - top + 8, 2)
   ctx.fill()
   ctx.fillStyle = 'rgba(60, 40, 20, 0.45)'
-  for (let k = 0; k < 6; k++) ctx.fillRect(nutX - 8, g.stringY(k) - 1, 9, 2)
+  for (let k = 0; k < STRING_NAMES.length; k++) ctx.fillRect(nutX - 8, g.stringY(k) - 1, 9, 2)
 
   // String posts on the headstock and string names.
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < STRING_NAMES.length; k++) {
     const y = g.stringY(k)
     ctx.fillStyle = color('--muted')
     ctx.font = `700 ${Math.max(12, Math.min(17, g.gap * 0.5))}px 'Barlow Condensed', system-ui, sans-serif`
@@ -551,9 +549,9 @@ function drawStrings(
   flash: number,
   flashColor: string,
 ) {
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < STRING_NAMES.length; k++) {
     const y = g.stringY(k)
-    const thick = GAUGE[k] * Math.min(1.15, Math.max(0.75, g.gap / 40))
+    const thick = guitar.gauge[k] * Math.min(1.15, Math.max(0.75, g.gap / 40))
     const muted = !!chord && chord.frets[k] < 0
     const lit = !!chord && !muted && ringing[k]
     // A muted string hit by mistake: it vibrates red.
@@ -571,7 +569,7 @@ function drawStrings(
     ctx.stroke()
 
     const metal = ctx.createLinearGradient(0, y - thick / 2, 0, y + thick / 2)
-    if (WOUND[k]) {
+    if (guitar.wound[k]) {
       metal.addColorStop(0, '#8a6a3c')
       metal.addColorStop(0.4, '#f1d29a')
       metal.addColorStop(1, '#6f532c')
@@ -609,7 +607,7 @@ function drawStrings(
     }
 
     // Winding texture on the bass strings.
-    if (WOUND[k] && !lit && thick > 2) {
+    if (guitar.wound[k] && !lit && thick > 2) {
       ctx.strokeStyle = 'rgba(70, 45, 15, 0.35)'
       ctx.lineWidth = 0.6
       ctx.beginPath()

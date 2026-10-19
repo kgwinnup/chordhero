@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
 import { heardNotes, loadModel, NOTE_ON, type NoteReading, NoteListener, stringsFromNotes } from '../audio/notes'
-import { CHORDS, CHORDS_BY_ID, NOTE_NAMES, STRING_NAMES } from '../music/chords'
+import { CHORDS, CHORDS_BY_ID, MAX_STRINGS, NOTE_NAMES, STRING_NAMES } from '../music/chords'
 
 interface Props {
   engine: AudioEngine
@@ -62,7 +62,7 @@ export function DetectorLab({ engine, currentStrings, chordId, onChord, micOn, o
     }
   }, [engine])
 
-  const mlStrings = reading ? stringsFromNotes(chord, reading.activation, noteOn) : Array(6).fill(false)
+  const mlStrings = reading ? stringsFromNotes(chord, reading.activation, noteOn) : Array(MAX_STRINGS).fill(false)
   const notes = reading ? heardNotes(reading.activation, noteOn).slice(0, 8) : []
   const test = async (only?: number) => {
     await engine.resume()

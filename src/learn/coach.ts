@@ -1,7 +1,8 @@
 import type { Chord } from '../music/chords'
 
-/** String names as you'd say them out loud, low → high. */
-export const SPOKEN_STRING = ['low E', 'A', 'D', 'G', 'B', 'high E']
+/** String names as you'd say them out loud, low → high, for the guitar being played. */
+export { SPOKEN_STRING } from '../music/chords'
+import { SPOKEN_STRING } from '../music/chords'
 export const FINGER = ['', 'index finger', 'middle finger', 'ring finger', 'pinky']
 const ordinal = (n: number) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`
 
@@ -52,7 +53,7 @@ export function shapeSteps(chord: Chord): string[] {
   }
   const muted = mutedStrings(chord)
   if (muted.length) lines.push(`Don't strum the ${list(muted.map((s) => SPOKEN_STRING[s]))} string${muted.length > 1 ? 's' : ''} (✕): start on the ${SPOKEN_STRING[muted[muted.length - 1] + 1]}`)
-  else lines.push('Strum all six strings')
+  else lines.push(`Strum all ${['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'][chord.frets.length]} strings`)
   return lines
 }
 

@@ -51,7 +51,7 @@ const song = (id: string, name: string, chords: string[], bpm: number, stars = 3
 export const PATH: Unit[] = [
   {
     title: 'E minor',
-    blurb: 'Two fingers, all six strings. Your first chord.',
+    blurb: 'Two fingers, every string. Your first chord.',
     steps: [shape('Em')],
   },
   {
@@ -71,17 +71,17 @@ export const PATH: Unit[] = [
   },
   {
     title: 'D major',
-    blurb: 'A little triangle on the top strings. Skip the two thick ones.',
+    blurb: 'A little triangle on the top strings. Skip any marked ✕.',
     steps: [shape('D'), changes('A', 'D', 15), song('e-a-d', 'E – A – D', ['E', 'A', 'D', 'A', 'E', 'A', 'D', 'A'], 65)],
   },
   {
     title: 'G major',
-    blurb: 'A big stretch across all six strings.',
+    blurb: 'A big stretch across every string.',
     steps: [shape('G'), changes('G', 'Em', 15), changes('G', 'D', 15), song('g-em-d', 'G – Em – D', ['G', 'Em', 'D', 'G', 'G', 'Em', 'D', 'G'], 65)],
   },
   {
     title: 'C major',
-    blurb: 'The last of the beginner chords. Skip the low E.',
+    blurb: 'The last of the beginner chords. Skip any string marked ✕.',
     steps: [
       shape('C'),
       changes('C', 'G', 15),

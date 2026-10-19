@@ -1,6 +1,3 @@
-// Strings are indexed low → high: 0 = low E, 5 = high e (standard tuning).
-export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e']
-export const OPEN_MIDI = [40, 45, 50, 55, 59, 64]
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 export type ChordGroup = 'Major' | 'Minor' | '7th' | 'Other'
@@ -32,7 +29,8 @@ const c = (
   barre,
 })
 
-export const CHORDS: Chord[] = [
+/** The chord shapes on a six-string guitar; other guitars' shapes are derived from them. */
+const SIX_STRING_CHORDS: Chord[] = [
   c('C', 'Major', 'x32010', 'x32010'),
   c('D', 'Major', 'xx0232', 'xx0132'),
   c('E', 'Major', '022100', '023100'),
@@ -58,17 +56,112 @@ export const CHORDS: Chord[] = [
   c('Esus4', 'Other', '022200', '023400'),
 ]
 
-export const CHORDS_BY_ID: Record<string, Chord> = Object.fromEntries(CHORDS.map((ch) => [ch.id, ch]))
-
 export const midiToFreq = (m: number) => 440 * Math.pow(2, (m - 69) / 12)
 
-export const stringMidi = (chord: Chord, s: number) =>
-  chord.frets[s] < 0 ? null : OPEN_MIDI[s] + chord.frets[s]
+export interface Guitar {
+  id: string
+  name: string
+  hint: string
+  /** Open-string MIDI notes, from the bass side */
+  open: number[]
+  /** Short names for the neck, from the bass side */
+  names: string[]
+  /** Names for the coach to say */
+  spoken: string[]
+  /** String thickness in px */
+  gauge: number[]
+  wound: boolean[]
+}
 
-export const chordPitchClasses = (chord: Chord): Set<number> => {
+export const GUITARS: Guitar[] = [
+  {
+    id: 'six',
+    name: '6-string',
+    hint: 'A standard guitar, acoustic, electric or classical',
+    open: [40, 45, 50, 55, 59, 64],
+    names: ['E', 'A', 'D', 'G', 'B', 'e'],
+    spoken: ['low E', 'A', 'D', 'G', 'B', 'high E'],
+    gauge: [4.2, 3.5, 2.8, 2.1, 1.6, 1.25],
+    wound: [true, true, true, false, false, false],
+  },
+  {
+    id: 'seven',
+    name: '7-string',
+    hint: 'An extra low B below the low E',
+    open: [35, 40, 45, 50, 55, 59, 64],
+    names: ['B', 'E', 'A', 'D', 'G', 'B', 'e'],
+    spoken: ['low B', 'low E', 'A', 'D', 'G', 'B', 'high E'],
+    gauge: [4.6, 4.0, 3.4, 2.7, 2.0, 1.55, 1.2],
+    wound: [true, true, true, true, false, false, false],
+  },
+  {
+    id: 'three',
+    name: '3-string',
+    hint: 'Tuned G B E, like a Loog: a guitar’s top three strings',
+    open: [55, 59, 64],
+    names: ['G', 'B', 'E'],
+    spoken: ['G', 'B', 'high E'],
+    gauge: [2.6, 2.0, 1.5],
+    wound: [false, false, false],
+  },
+]
+
+export const GUITARS_BY_ID: Record<string, Guitar> = Object.fromEntries(GUITARS.map((g) => [g.id, g]))
+
+/** The longest string count of any guitar, for buffers that must fit them all. */
+export const MAX_STRINGS = Math.max(...GUITARS.map((g) => g.open.length))
+
+/**
+ * A six-string shape on another guitar. A 7-string's low B rings open when B is in the chord and
+ * the low E is played too (E, G, Em…), and is muted otherwise. A 3-string plays the top three
+ * strings of the shape, which is how Loog chord charts are drawn.
+ */
+export function adaptChord(chord: Chord, to: Guitar): Chord {
+  const six = GUITARS_BY_ID.six
+  if (to.id === 'seven') {
+    const hasB = [...chordPitchClasses(chord, six.open)].includes(11)
+    return {
+      ...chord,
+      frets: [hasB && chord.frets[0] >= 0 ? 0 : -1, ...chord.frets],
+      fingers: [0, ...chord.fingers],
+      barre: chord.barre && { ...chord.barre, from: chord.barre.from + 1, to: chord.barre.to + 1 },
+    }
+  }
+  if (to.id === 'three') {
+    const drop = 3
+    const barre = chord.barre && chord.barre.to >= drop ? { ...chord.barre, from: Math.max(0, chord.barre.from - drop), to: chord.barre.to - drop } : undefined
+    return { ...chord, frets: chord.frets.slice(drop), fingers: chord.fingers.slice(drop), barre }
+  }
+  return chord
+}
+
+// The guitar being played. These are live bindings: `setGuitar` swaps them for every importer.
+export let guitar: Guitar = GUITARS_BY_ID.six
+/** Strings are indexed from the bass side: on a 6-string 0 = low E, 5 = high e. */
+export let STRING_NAMES = guitar.names
+export let OPEN_MIDI = guitar.open
+export let SPOKEN_STRING = guitar.spoken
+export let CHORDS: Chord[] = SIX_STRING_CHORDS
+export let CHORDS_BY_ID: Record<string, Chord> = Object.fromEntries(CHORDS.map((ch) => [ch.id, ch]))
+
+export function setGuitar(id: string) {
+  const next = GUITARS_BY_ID[id] ?? GUITARS_BY_ID.six
+  if (next === guitar) return
+  guitar = next
+  STRING_NAMES = next.names
+  OPEN_MIDI = next.open
+  SPOKEN_STRING = next.spoken
+  CHORDS = SIX_STRING_CHORDS.map((ch) => adaptChord(ch, next))
+  CHORDS_BY_ID = Object.fromEntries(CHORDS.map((ch) => [ch.id, ch]))
+}
+
+export const stringMidi = (chord: Chord, s: number, open = OPEN_MIDI) =>
+  chord.frets[s] < 0 ? null : open[s] + chord.frets[s]
+
+export const chordPitchClasses = (chord: Chord, open = OPEN_MIDI): Set<number> => {
   const pcs = new Set<number>()
   chord.frets.forEach((_, s) => {
-    const m = stringMidi(chord, s)
+    const m = stringMidi(chord, s, open)
     if (m !== null) pcs.add(m % 12)
   })
   return pcs

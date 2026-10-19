@@ -3,7 +3,7 @@
  * Works on a dB magnitude spectrum (as from AnalyserNode.getFloatFrequencyData), so it can be
  * unit-tested with synthetic spectra, no Web Audio needed.
  */
-import { type Chord, chordPitchClasses, midiToFreq, stringMidi } from '../music/chords'
+import { type Chord, chordPitchClasses, guitar, midiToFreq, OPEN_MIDI, stringMidi } from '../music/chords'
 
 // ±30 cents around each expected note: tight enough that a loud strum's dense overtones rarely land
 // on a string's note by chance (and the tuner gets the guitar well within it).
@@ -41,7 +41,10 @@ const SOURCE_PRESENT_DB = 6
 export const STRUM_EXCESS_DB = 2
 /** Assumed fade per overtone step when estimating a string's overtone from one side only. */
 const OVERTONE_FADE_DB = 3
-/** Strings with their own evidence needed to treat the sound as a strum: at least this many… */
+/**
+ * Strings with their own evidence needed to treat the sound as a strum: at least this many (or all
+ * but one, on a 3-string, where a G chord's top note is its bottom one an octave up)…
+ */
 const STRUM_MIN_STRINGS = 3
 /** …and at least this share of the chord's strings. */
 const STRUM_MIN_SHARE = 0.5
@@ -158,16 +161,13 @@ export function scoreStrings(
   // evidence, it's a strum: judge overtone strings by how much they add instead.
   const sounding = chord.frets.filter((f) => f >= 0).length
   const own = strict.independent.filter(Boolean).length
-  if (own < Math.max(STRUM_MIN_STRINGS, Math.ceil(sounding * STRUM_MIN_SHARE))) return strict
+  if (own < Math.max(Math.min(STRUM_MIN_STRINGS, sounding - 1), Math.ceil(sounding * STRUM_MIN_SHARE))) return strict
   const strum = decide(spec, binHz, chord, threshold, allowed, prevIndependent, true)
   return { ...strum, independent: strict.independent }
 }
 
 /** A muted string must stand this much further above the noise than a played one to count as hit. */
 export const MUTED_EXTRA_DB = 6
-
-/** Open-string notes in standard tuning, low E → high e, in Hz. */
-const OPEN_HZ = [82.41, 110, 146.83, 196, 246.94, 329.63]
 
 /**
  * The chord's muted strings (✕) that are ringing open anyway, strummed by mistake (the low E in
@@ -178,7 +178,7 @@ const OPEN_HZ = [82.41, 110, 146.83, 196, 246.94, 329.63]
 export function mutedRinging(spec: ArrayLike<number>, binHz: number, chord: Chord, threshold: number, allowed: boolean): boolean[] {
   return chord.frets.map((f, s) => {
     if (!allowed || f >= 0) return false
-    const hz = OPEN_HZ[s]
+    const hz = midiToFreq(OPEN_MIDI[s])
     const b = Math.round(hz / binHz)
     const peak = Math.max(spec[b - 1], spec[b], spec[b + 1])
     const floor = median(spec, toBin(hz / LOCAL_FLOOR_SPAN, binHz), toBin(hz * LOCAL_FLOOR_SPAN, binHz) + 1)
@@ -206,10 +206,11 @@ function decide(
   }
   const contrast = (f: number) => contrastAt(spec, binHz, f)
 
-  const scores = new Array<number>(6).fill(0)
-  const ringing = new Array<boolean>(6).fill(false)
-  const independent = new Array<boolean>(6).fill(false)
-  const present = new Array<boolean>(6).fill(false)
+  const n = chord.frets.length
+  const scores = new Array<number>(n).fill(0)
+  const ringing = new Array<boolean>(n).fill(false)
+  const independent = new Array<boolean>(n).fill(false)
+  const present = new Array<boolean>(n).fill(false)
   const vouches = (o: number) => independent[o] || !!prevIndependent[o]
 
   const order = expected.map((f, i) => ({ f, i })).filter((x): x is { f: number; i: number } => x.f !== null).sort((a, b) => a.f - b.f)
@@ -222,7 +223,7 @@ function decide(
       if (hf > MAX_PARTIAL_HZ) break
       let usable = true
       let own = true
-      for (let o = 0; o < 6 && usable; o++) {
+      for (let o = 0; o < n && usable; o++) {
         const g = expected[o]
         if (o === s || g === null) continue
         const k = overtoneOf(hf, g)
@@ -325,7 +326,8 @@ export const HARMONIC_DECAY = 0.9
  */
 const templates = new Map<string, number[]>()
 function chordTemplate(chord: Chord) {
-  let t = templates.get(chord.id)
+  const key = `${guitar.id}:${chord.id}`
+  let t = templates.get(key)
   if (!t) {
     t = new Array<number>(12).fill(0)
     for (const f of chordFrequencies(chord)) {
@@ -336,7 +338,7 @@ function chordTemplate(chord: Chord) {
         t[midi % 12] += HARMONIC_DECAY ** (h - 1)
       }
     }
-    templates.set(chord.id, t)
+    templates.set(key, t)
   }
   return t
 }

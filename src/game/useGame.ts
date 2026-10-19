@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
-import { type Chord, CHORDS_BY_ID } from '../music/chords'
+import { type Chord, CHORDS_BY_ID, MAX_STRINGS } from '../music/chords'
 import { RIVAL_LEEWAY } from '../audio/detect'
 import { applyJudgment, emptyScore, judge, type Judgment, missJudgment, type ScoreState } from './scoring'
 import { adaptTempo, emptyTempo } from './tempo'
@@ -26,6 +26,8 @@ export interface Settings {
   testMode: boolean
   /** Speed up after clean chords and slow down after misses */
   adaptiveTempo: boolean
+  /** Which guitar is played: an id from GUITARS */
+  guitar: string
 }
 
 export type Phase = 'idle' | 'countin' | 'playing' | 'done'
@@ -153,7 +155,7 @@ export function useGame(
     onTempoRef.current = onTempo
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false), tone: null, light: emptyLight(), heard: { at: 0, onset: 0, chordId: null, strings: Array(6).fill(false), soundsRight: false, notes: Array(6).fill(0) } })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(MAX_STRINGS).fill(false), tone: null, light: emptyLight(), heard: { at: 0, onset: 0, chordId: null, strings: Array(MAX_STRINGS).fill(false), soundsRight: false, notes: Array(MAX_STRINGS).fill(0) } })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
@@ -170,7 +172,7 @@ export function useGame(
   const [phase, setPhase] = useState<Phase>('idle')
   const [score, setScore] = useState<ScoreState>(emptyScore)
   const scoreRef = useRef<ScoreState>(emptyScore())
-  const [ui, setUi] = useState<UiState>({ strings: Array(6).fill(false), match: 0, level: 0, target: null, next: null, countdown: null })
+  const [ui, setUi] = useState<UiState>({ strings: Array(MAX_STRINGS).fill(false), match: 0, level: 0, target: null, next: null, countdown: null })
   const uiKey = useRef('')
 
   const start = useCallback(async () => {
@@ -360,7 +362,7 @@ export function useGame(
         }
       }
 
-      const strings = analysisChord ? a.strings : Array(6).fill(false)
+      const strings = analysisChord ? a.strings : Array(MAX_STRINGS).fill(false)
       v.display = analysisChord
       v.light = updateLight(v.light, { now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings, soundsRight, muted: a.muted })
       v.ringing = v.light.strings

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { type Chord, chordPitchClasses, CHORDS, CHORDS_BY_ID, STRING_NAMES } from '../music/chords'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { adaptChord, type Chord, chordPitchClasses, CHORDS, CHORDS_BY_ID, GUITARS_BY_ID, setGuitar, STRING_NAMES } from '../music/chords'
 import { chordFit, chordFrequencies, chromaMatch, isNoiseLike, mutedRinging, noteLevels, pickRang, RIVAL_LEEWAY, scoreStrings } from './detect'
 
 const SAMPLE_RATE = 48000
@@ -231,6 +231,30 @@ describe('telling chords apart', () => {
     it('bashing all six open strings passes for at most a couple of chords', () => {
       const open = spectrum([82.41, 110, 146.83, 196, 246.94, 329.63], mic, { level: -30 })
       expect(CHORDS.filter((c) => fits(c, open)).length).toBeLessThanOrEqual(2)
+    })
+  })
+})
+
+describe.each(['seven', 'three'])('on a %s-string guitar', (id) => {
+  const guitar = GUITARS_BY_ID[id]
+  const chords = CHORDS.map((c) => adaptChord(c, guitar))
+  const name = (s: number) => guitar.names[s]
+  beforeAll(() => setGuitar(id))
+  afterAll(() => setGuitar('six'))
+
+  describe('a single plucked string lights only that string', () => {
+    const cases = chords.flatMap((chord) => sounding(chord).map((s) => [`${chord.name}, ${name(s)} string`, chord, s] as const))
+    it.each(cases)('%s', (_, chord, s) => {
+      const { ringing } = listen(chord, spectrum(played(chord, [s]), PHONE))
+      expect(ringing.flatMap((on, k) => (on ? [k] : []))).toEqual([s])
+    })
+  })
+
+  describe('a full strum lights every string and fits the chord', () => {
+    it.each(chords.map((c) => [c.name, c] as const))('%s', (_, chord) => {
+      const spec = spectrum(played(chord, sounding(chord)), PHONE)
+      expect(listen(chord, spec).ringing.flatMap((on, k) => (on ? [k] : []))).toEqual(sounding(chord))
+      expect(chromaMatch(spec, BIN_HZ, chord)).toBeGreaterThan(MIN_MATCH)
     })
   })
 })

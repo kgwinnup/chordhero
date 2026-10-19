@@ -1,5 +1,6 @@
 import type { AudioEngine } from '../audio/engine'
 import type { Settings } from '../game/useGame'
+import { GUITARS, GUITARS_BY_ID } from '../music/chords'
 import { MicCheck } from './MicCheck'
 
 interface Props {
@@ -25,6 +26,18 @@ export function SettingsSheet({ settings, set, running, onDemo, devices, deviceI
           <button className="icon ghost" aria-label="Close settings" onClick={onClose}>
             ✕
           </button>
+        </div>
+
+        <div className="sheet-group">
+          <span className="sheet-label">Guitar</span>
+          <div className="segmented guitar-picker" role="radiogroup" aria-label="Guitar">
+            {GUITARS.map((g) => (
+              <button key={g.id} role="radio" aria-checked={g.id === settings.guitar} className={g.id === settings.guitar ? 'on' : ''} disabled={running} onClick={() => set('guitar', g.id)}>
+                {g.name}
+              </button>
+            ))}
+          </div>
+          <p className="sheet-hint">{(GUITARS_BY_ID[settings.guitar] ?? GUITARS[0]).hint}</p>
         </div>
 
         <div className="sheet-group">

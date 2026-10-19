@@ -13,7 +13,7 @@ import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, save
 import { newKey, type Settings, useGame } from './game/useGame'
 import { starsFor } from './game/scoring'
 import { emptyProgress, loadProgress, markDone, recordBest, saveProgress, type SongStep } from './learn/path'
-import { CHORDS_BY_ID } from './music/chords'
+import { CHORDS_BY_ID, setGuitar } from './music/chords'
 import { keepAwake } from './wakeLock'
 
 const DEFAULT_SETTINGS: Settings = {
@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: Settings = {
   sensitivity: 50,
   testMode: false,
   adaptiveTempo: false,
+  guitar: 'six',
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -65,7 +66,12 @@ export default function App() {
   /** A song from the beginner path, played in place of the chosen preset. */
   const [lesson, setLesson] = useState<SongStep | null>(null)
   const [progress, setProgress] = useState(loadProgress)
-  const seq = useMemo(() => toSeq(lesson ? lesson.chords.map((chordId) => ({ chordId, beats: 4 })) : preset.items), [preset, lesson])
+  const seq = useMemo(() => {
+    // Swap in the chosen guitar's chord shapes before anything reads them. This runs during render,
+    // ahead of the game and every screen below; the sequence holds the shapes, so it's rebuilt too.
+    setGuitar(settings.guitar)
+    return toSeq(lesson ? lesson.chords.map((chordId) => ({ chordId, beats: 4 })) : preset.items)
+  }, [preset, lesson, settings.guitar])
   const [preview, setPreview] = useState<string | null>(null)
   /** 'checking' while we ask the browser whether mic access was already granted, so the popup doesn't flash. */
   const [mic, setMic] = useState<'checking' | 'off' | 'on' | 'error'>('checking')

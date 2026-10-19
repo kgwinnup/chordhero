@@ -30,6 +30,21 @@ export const INSTRUMENTS: Instrument[] = [
   { id: 'electric', name: 'Electric', layout: 'six-in-line', tunings: SIX_STRING_TUNINGS },
   { id: 'classical', name: 'Classical', layout: 'three-a-side', tunings: [SIX_STRING_TUNINGS[0], SIX_STRING_TUNINGS[1]] },
   {
+    id: 'seven',
+    name: '7-string',
+    layout: 'six-in-line',
+    tunings: [
+      { id: 'standard', name: 'Standard (B E A D G B E)', notes: [35, 40, 45, 50, 55, 59, 64] },
+      { id: 'drop-a', name: 'Drop A (A E A D G B E)', notes: [33, 40, 45, 50, 55, 59, 64] },
+    ],
+  },
+  {
+    id: 'three',
+    name: '3-string',
+    layout: 'four-in-line',
+    tunings: [{ id: 'standard', name: 'Standard (G B E)', notes: [55, 59, 64] }],
+  },
+  {
     id: 'bass',
     name: 'Bass',
     layout: 'four-in-line',
