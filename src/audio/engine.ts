@@ -1,4 +1,5 @@
 import { type Chord, CHORDS, MAX_STRINGS, midiToFreq, stringMidi } from '../music/chords'
+import { Crowd } from './crowd'
 import { chordFit, isNoiseLike, mutedRinging, noteLevels, scoreStrings } from './detect'
 import { type Pitch, type PitchRange, yinPitch } from './pitch'
 
@@ -64,6 +65,7 @@ export class AudioEngine {
   private strumCache = new Map<string, AudioBuffer>()
   lastOnsetAt = -Infinity
   clickVolume = 0.5
+  crowd!: Crowd
 
   constructor() {
     this.build()
@@ -93,6 +95,8 @@ export class AudioEngine {
     this.input.connect(this.analyser)
     this.output = this.ctx.createGain()
     this.output.connect(this.ctx.destination)
+    // Speakers only: the detectors never hear the crowd.
+    this.crowd = new Crowd(this.ctx, this.output)
     this.freqData = new Float32Array(this.analyser.frequencyBinCount)
     this.timeData = new Float32Array(this.analyser.fftSize)
   }
@@ -100,7 +104,9 @@ export class AudioEngine {
   /** Swap in a fresh AudioContext (and graph), dropping anything tied to the old one. */
   private rebuild(sampleRate?: number) {
     const old = this._ctx
+    const crowdWasOn = this.crowd.running
     this.build(sampleRate)
+    if (crowdWasOn) this.crowd.start()
     old.close().catch(() => {})
     this.strumCache.clear()
     this.rmsHistory = []

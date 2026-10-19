@@ -19,7 +19,7 @@ function useCountUp(target: number) {
   return shown
 }
 
-export function ScoreHud({ score }: { score: ScoreState }) {
+export function ScoreHud({ score, crowd }: { score: ScoreState; crowd: boolean }) {
   const points = useCountUp(score.points)
   const accuracy = score.judged ? Math.round((score.qualitySum / score.judged) * 100) : null
   const progress = score.multiplier >= MAX_MULTIPLIER ? 1 : (score.combo % COMBO_STEP) / COMBO_STEP
@@ -44,7 +44,7 @@ export function ScoreHud({ score }: { score: ScoreState }) {
         <span className="hud-label">Accuracy</span>
         <b>{accuracy === null ? '—' : `${accuracy}%`}</b>
       </div>
-      <RockMeter value={score.rock} />
+      {crowd && <RockMeter value={score.rock} />}
     </div>
   )
 }

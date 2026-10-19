@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS: Settings = {
   testMode: false,
   adaptiveTempo: false,
   guitar: 'six',
+  crowd: false,
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -114,6 +115,24 @@ export default function App() {
     if (phase === 'done' && prevPhase.current !== 'done') showResults()
     prevPhase.current = phase
   })
+
+  // The crowd: in while a song plays, cheering great chords; applause when it ends, then quiet.
+  useEffect(() => {
+    if (!settings.crowd) return engine.crowd.stop()
+    if (running) return engine.crowd.start()
+    if (phase !== 'done') return engine.crowd.stop()
+    engine.crowd.applause(starsFor(score) / 5)
+    const t = setTimeout(() => engine.crowd.stop(), 4000)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applaud the score at the moment the song ends
+  }, [engine, settings.crowd, running, phase])
+  useEffect(() => engine.crowd.setExcitement(score.rock), [engine, score.rock])
+  const lastJudgment = score.last
+  useEffect(() => {
+    if (!lastJudgment) return
+    if (lastJudgment.grade === 'perfect') engine.crowd.cheer(lastJudgment.multiplier / 4)
+    else if (lastJudgment.grade === 'great' && lastJudgment.multiplier >= 2) engine.crowd.cheer(0.2)
+  }, [engine, lastJudgment])
 
   useEffect(() => save('chordlight.settings', settings), [settings])
   useEffect(() => save('chordlight.prefs', { defaultBeats, preset: presetId }), [defaultBeats, presetId])
@@ -391,7 +410,7 @@ export default function App() {
         />
       ) : (
         <>
-          <ScoreHud score={score} />
+          <ScoreHud score={score} crowd={settings.crowd} />
 
           <section className={`stage heat-${score.multiplier}`}>
             <Neck layout={layout} view={view} loop={settings.loop} />

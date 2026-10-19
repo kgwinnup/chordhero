@@ -52,6 +52,7 @@ export function SettingsSheet({ settings, set, running, onDemo, devices, deviceI
           <Toggle label="Loop" hint="Repeat the sequence" checked={settings.loop} onChange={(v) => set('loop', v)} disabled={running} />
           <Toggle label="Metronome" checked={settings.metronome} onChange={(v) => set('metronome', v)} />
           <Toggle label="Count-in" hint="One bar of clicks before the first chord" checked={settings.countIn} onChange={(v) => set('countIn', v)} />
+          <Toggle label="Crowd" hint="A crowd meter, and a crowd that cheers when you play well" checked={settings.crowd} onChange={(v) => set('crowd', v)} />
         </div>
 
         <div className="sheet-group">

@@ -28,6 +28,8 @@ export interface Settings {
   adaptiveTempo: boolean
   /** Which guitar is played: an id from GUITARS */
   guitar: string
+  /** Show the crowd meter, and play a crowd that reacts to it */
+  crowd: boolean
 }
 
 export type Phase = 'idle' | 'countin' | 'playing' | 'done'
