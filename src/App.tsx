@@ -35,6 +35,9 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
+/** Whether the mic was on when the app was last used. */
+const MIC_KEY = 'chordhero.mic'
+
 function save(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value))
@@ -151,6 +154,7 @@ export default function App() {
   const enableMic = async (id = deviceId) => {
     try {
       await engine.enableMic(id || undefined)
+      save(MIC_KEY, { on: true })
       setMic('on')
       setMicError('')
       set('testMode', false)
@@ -184,8 +188,14 @@ export default function App() {
 
   const gateOpen = !settings.testMode && (mic === 'off' || mic === 'error')
 
-  // If mic access was granted before, connect straight away: no popup, no tap.
+  // If mic access was granted before, connect straight away: no popup, no tap. Home-screen apps
+  // on iPhone forget the grant every launch, so if the mic was on last time, ask for it directly:
+  // the system's Allow prompt is then the only thing to tap, not our popup and then that.
   useEffect(() => {
+    if (load<{ on: boolean }>(MIC_KEY, { on: false }).on) {
+      void enableMic()
+      return
+    }
     let settled = false
     const done = (granted: boolean) => {
       if (settled) return
@@ -295,6 +305,7 @@ export default function App() {
               onClick={() => {
                 stop()
                 engine.disableMic()
+                save(MIC_KEY, { on: false })
                 setMic('off')
               }}
             >
