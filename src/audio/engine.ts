@@ -24,7 +24,8 @@ export interface Analysis {
 const FFT_SIZE = 16384 // ~2.9 Hz/bin at 48 kHz: enough to separate low E from F
 /** Consecutive frames a string must read as ringing before it lights. */
 const PERSIST_FRAMES = 2
-const GATE_RMS = 0.006
+/** Input quieter than this is treated as silence. Low, so soft playing on a phone mic still counts. */
+const GATE_RMS = 0.003
 const HOLD_SECONDS = 0.25 // keep a string lit briefly so it doesn't flicker
 
 export interface MicInfo {

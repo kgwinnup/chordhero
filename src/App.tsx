@@ -56,12 +56,11 @@ export default function App() {
   const preset = allPresets.find((p) => p.id === presetId) ?? BUILT_IN_PRESETS[0]
   const seq = useMemo(() => toSeq(preset.items), [preset])
   const [preview, setPreview] = useState<string | null>(null)
-  const [mic, setMic] = useState<'off' | 'on' | 'error'>('off')
+  /** 'checking' while we ask the browser whether mic access was already granted, so the popup doesn't flash. */
+  const [mic, setMic] = useState<'checking' | 'off' | 'on' | 'error'>('checking')
   const [micError, setMicError] = useState('')
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceId] = useState('')
-  /** The mic has heard the guitar during the setup check. */
-  const [micReady, setMicReady] = useState(false)
 
   const { layout, view, phase, score, ui, start, stop } = useGame(engine, seq, settings, preview)
   const running = phase === 'countin' || phase === 'playing'
@@ -158,7 +157,28 @@ export default function App() {
     engine.strum(CHORDS_BY_ID[chordId], engine.ctx.currentTime, settings.testMode)
   }
 
-  const gateOpen = !settings.testMode && !(mic === 'on' && micReady)
+  const gateOpen = !settings.testMode && (mic === 'off' || mic === 'error')
+
+  // If mic access was granted before, connect straight away: no popup, no tap.
+  useEffect(() => {
+    let settled = false
+    const done = (granted: boolean) => {
+      if (settled) return
+      settled = true
+      if (granted) void enableMic()
+      else setMic((m) => (m === 'checking' ? 'off' : m))
+    }
+    navigator.permissions
+      ?.query({ name: 'microphone' as PermissionName })
+      .then((p) => done(p.state === 'granted'))
+      .catch(() => done(false))
+    // Some browsers have no permissions query (or never answer it): ask the player.
+    const timer = setTimeout(() => done(false), 1000)
+    if (!navigator.permissions) done(false)
+    return () => clearTimeout(timer)
+    // Runs once on launch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
   const [screen, setScreen] = useState<'play' | 'tune'>('play')
@@ -227,7 +247,6 @@ export default function App() {
                 stop()
                 engine.disableMic()
                 setMic('off')
-                setMicReady(false)
               }}
             >
               <span className="live-dot" aria-hidden /> Mic
@@ -253,19 +272,7 @@ export default function App() {
         </div>
       </header>
 
-      {gateOpen && (
-        <MicGate
-          micOn={mic === 'on'}
-          error={micError}
-          level={ui.level}
-          onEnable={() => enableMic()}
-          onDemo={() => toggleTestMode(true)}
-          onReady={() => setMicReady(true)}
-          devices={devices}
-          deviceId={deviceId}
-          onDevice={changeDevice}
-        />
-      )}
+      {gateOpen && <MicGate error={micError} onEnable={() => enableMic()} onDemo={() => toggleTestMode(true)} />}
       {settingsOpen && (
         <SettingsSheet
           settings={settings}
