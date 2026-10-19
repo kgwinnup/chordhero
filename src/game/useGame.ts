@@ -3,6 +3,7 @@ import type { AudioEngine } from '../audio/engine'
 import { type Chord, CHORDS_BY_ID } from '../music/chords'
 import { RIVAL_LEEWAY } from '../audio/detect'
 import { applyJudgment, emptyScore, judge, type Judgment, missJudgment, type ScoreState } from './scoring'
+import { adaptTempo, emptyTempo } from './tempo'
 
 export const newKey = () => Math.random().toString(36).slice(2, 10)
 
@@ -22,6 +23,8 @@ export interface Settings {
   sensitivity: number
   /** Feed synthesized strums to the detector instead of the mic */
   testMode: boolean
+  /** Speed up after clean chords and slow down after misses */
+  adaptiveTempo: boolean
 }
 
 export type Phase = 'idle' | 'countin' | 'playing' | 'done'
@@ -51,6 +54,19 @@ export interface GameView {
   /** The chord being listened for, and which of its strings are ringing right now */
   display: Chord | null
   ringing: boolean[]
+  /** The latest analysis, for the lesson screens to listen with */
+  heard: Heard
+}
+
+export interface Heard {
+  /** AudioContext time of this frame */
+  at: number
+  /** AudioContext time of the last strum's onset */
+  onset: number
+  chordId: string | null
+  strings: boolean[]
+  /** It sounds like the chord, and more like it than any other */
+  soundsRight: boolean
 }
 
 export interface UiState {
@@ -105,18 +121,27 @@ export function eventAt(layout: Layout, beat: number, loop: boolean): ChordEvent
   return eventByAbs(layout, cycle * n + Math.max(0, index), loop)
 }
 
-export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Settings, previewChordId: string | null) {
+export function useGame(
+  engine: AudioEngine | null,
+  seq: SeqItem[],
+  settings: Settings,
+  previewChordId: string | null,
+  /** Adaptive tempo changed the BPM */
+  onTempo?: (bpm: number, from: number) => void,
+) {
   const layout = useMemo(() => buildLayout(seq), [seq])
   const layoutRef = useRef(layout)
   const settingsRef = useRef(settings)
   const previewRef = useRef(previewChordId)
+  const onTempoRef = useRef(onTempo)
   useLayoutEffect(() => {
     layoutRef.current = layout
     settingsRef.current = settings
     previewRef.current = previewChordId
+    onTempoRef.current = onTempo
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false) })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(6).fill(false), heard: { at: 0, onset: 0, chordId: null, strings: Array(6).fill(false), soundsRight: false } })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
@@ -126,6 +151,7 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
     targetStartTime: 0,
     judging: null as { abs: number; until: number; best: number; onset: number } | null,
     strummed: new Set<number>(),
+    tempo: emptyTempo(),
   })
 
   const [phase, setPhase] = useState<Phase>('idle')
@@ -151,6 +177,7 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
     st.windowOpenedAt = null
     st.judging = null
     st.strummed = new Set()
+    st.tempo = emptyTempo()
     scoreRef.current = emptyScore()
     setScore(scoreRef.current)
     setPhase('countin')
@@ -185,6 +212,16 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
         v.lastJudgment = j
         v.multiplier = scoreRef.current.multiplier
         setScore(scoreRef.current)
+        if (s.adaptiveTempo && v.phase === 'playing') {
+          const t = adaptTempo(st.tempo, j, settingsRef.current.bpm)
+          st.tempo = t.state
+          const from = settingsRef.current.bpm
+          if (t.bpm !== from) {
+            // Takes effect on the next frame, before React gets round to it.
+            settingsRef.current = { ...settingsRef.current, bpm: t.bpm }
+            onTempoRef.current?.(t.bpm, from)
+          }
+        }
       }
       const expectedStrings = (e: ChordEvent) => e.chord.frets.filter((f) => f >= 0).length
       const finalize = (e: ChordEvent) => {
@@ -281,6 +318,9 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
       }
 
       const a = engine.analyze(analysisChord, threshold)
+      // It has to sound like this chord, and more like it than like any other chord.
+      const soundsRight = a.gate && a.match >= minMatch - 0.1 && a.match >= a.rival - RIVAL_LEEWAY
+      v.heard = { at: now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings: a.strings, soundsRight }
 
       if (target && (v.phase === 'playing' || v.phase === 'countin')) {
         const inWindow = v.pos >= target.start - EARLY_BEATS && v.pos < target.end && !v.results.has(target.abs)
@@ -289,8 +329,6 @@ export function useGame(engine: AudioEngine | null, seq: SeqItem[], settings: Se
           const expected = expectedStrings(target)
           const ringing = a.strings.filter((on, i) => on && target!.chord.frets[i] >= 0).length
           const strummedNow = a.lastOnsetAt >= st.windowOpenedAt - 0.15
-          // It has to sound like this chord, and more like it than like any other chord.
-          const soundsRight = a.gate && a.match >= minMatch - 0.1 && a.match >= a.rival - RIVAL_LEEWAY
           // Start judging once enough of the chord is recognised, then take the best string count.
           if (!st.judging && strummedNow && soundsRight && ringing / expected >= MIN_STRINGS) {
             st.judging = { abs: target.abs, until: now + JUDGE_SECONDS, best: ringing, onset: a.lastOnsetAt }

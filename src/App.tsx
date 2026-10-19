@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioEngine } from './audio/engine'
 import { Neck } from './components/Neck'
 import { JudgmentPopup, Results, ScoreHud } from './components/Hud'
@@ -7,8 +7,11 @@ import { SettingsSheet } from './components/SettingsSheet'
 import { PresetEditor } from './components/PresetEditor'
 import { DetectorLab } from './components/DetectorLab'
 import { TuneView } from './components/TuneView'
+import { Learn } from './components/Learn'
 import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, saveCustomPresets, toSeq } from './game/presets'
 import { newKey, type Settings, useGame } from './game/useGame'
+import { starsFor } from './game/scoring'
+import { emptyProgress, loadProgress, markDone, recordBest, saveProgress, type SongStep } from './learn/path'
 import { CHORDS_BY_ID } from './music/chords'
 import { keepAwake } from './wakeLock'
 
@@ -20,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   countIn: true,
   sensitivity: 50,
   testMode: false,
+  adaptiveTempo: false,
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -54,7 +58,10 @@ export default function App() {
   const [editing, setEditing] = useState<{ preset: Preset | null } | null>(null)
   const allPresets = [...BUILT_IN_PRESETS, ...customPresets]
   const preset = allPresets.find((p) => p.id === presetId) ?? BUILT_IN_PRESETS[0]
-  const seq = useMemo(() => toSeq(preset.items), [preset])
+  /** A song from the beginner path, played in place of the chosen preset. */
+  const [lesson, setLesson] = useState<SongStep | null>(null)
+  const [progress, setProgress] = useState(loadProgress)
+  const seq = useMemo(() => toSeq(lesson ? lesson.chords.map((chordId) => ({ chordId, beats: 4 })) : preset.items), [preset, lesson])
   const [preview, setPreview] = useState<string | null>(null)
   /** 'checking' while we ask the browser whether mic access was already granted, so the popup doesn't flash. */
   const [mic, setMic] = useState<'checking' | 'off' | 'on' | 'error'>('checking')
@@ -62,9 +69,16 @@ export default function App() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceId] = useState('')
 
-  const { layout, view, phase, score, ui, start, stop } = useGame(engine, seq, settings, preview)
+  // Lesson songs play through once, so they can be graded.
+  const gameSettings = useMemo(() => (lesson ? { ...settings, loop: false } : settings), [settings, lesson])
+  const [tempoNote, setTempoNote] = useState<{ bpm: number; up: boolean } | null>(null)
+  const onTempo = useCallback((bpm: number, from: number) => {
+    setSettings((s) => ({ ...s, bpm }))
+    setTempoNote({ bpm, up: bpm > from })
+  }, [])
+  const { layout, view, phase, score, ui, start, stop } = useGame(engine, seq, gameSettings, preview, onTempo)
   const running = phase === 'countin' || phase === 'playing'
-  const [results, setResults] = useState<{ best: number; isNewBest: boolean } | null>(null)
+  const [results, setResults] = useState<{ best: number; isNewBest: boolean; note?: string } | null>(null)
   const prevPhase = useRef(phase)
 
   // Show results when a song finishes, or when it's stopped after playing something.
@@ -74,7 +88,17 @@ export default function App() {
     const bests = load<Record<string, number>>('chordlight.best', {})
     const prev = bests[key] ?? 0
     if (score.points > prev) save('chordlight.best', { ...bests, [key]: score.points })
-    setResults({ best: Math.max(prev, score.points), isNewBest: score.points > prev && score.points > 0 })
+    let note: string | undefined
+    if (lesson) {
+      const passed = phase === 'done' && starsFor(score) >= lesson.stars
+      if (passed) setProgress((p) => markDone(p, lesson.id))
+      note = passed
+        ? `Lesson passed! On to the next step.`
+        : phase === 'done'
+          ? `Earn ${lesson.stars}★ to pass. Try a slower tempo, or turn on “Wait for me” in settings.`
+          : `Play it all the way through to pass the lesson.`
+    }
+    setResults({ best: Math.max(prev, score.points), isNewBest: score.points > prev && score.points > 0, note })
   }
   useEffect(() => {
     if (phase === 'done' && prevPhase.current !== 'done') showResults()
@@ -84,6 +108,7 @@ export default function App() {
   useEffect(() => save('chordlight.settings', settings), [settings])
   useEffect(() => save('chordlight.prefs', { defaultBeats, preset: presetId }), [defaultBeats, presetId])
   useEffect(() => saveCustomPresets(customPresets), [customPresets])
+  useEffect(() => saveProgress(progress), [progress])
 
   // Practice mode shows the chord you last heard or added in the editor; once the editor
   // closes or you pick another song, go back to that song's first chord.
@@ -181,9 +206,23 @@ export default function App() {
   }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
-  const [screen, setScreen] = useState<'play' | 'tune'>('play')
-  // Your hands are on the guitar, not the phone: keep the screen on while playing or tuning.
-  useEffect(() => keepAwake(running || screen === 'tune'), [running, screen])
+  const [screen, setScreen] = useState<'play' | 'tune' | 'learn'>('play')
+  // Your hands are on the guitar, not the phone: keep the screen on while playing, tuning or learning.
+  useEffect(() => keepAwake(running || screen !== 'play'), [running, screen])
+  const goTo = (to: 'play' | 'tune' | 'learn') => {
+    if (screen === to) return
+    stop()
+    setResults(null)
+    setPreview(null)
+    setLesson(null)
+    setScreen(to)
+  }
+  const playSong = (step: SongStep) => {
+    setPreview(null)
+    setLesson(step)
+    set('bpm', step.bpm)
+    setScreen('play')
+  }
   const changeDevice = (id: string) => {
     setDeviceId(id)
     enableMic(id)
@@ -198,7 +237,17 @@ export default function App() {
           </span>
           ChordHero
         </h1>
-        {screen === 'play' && (
+        {screen === 'play' && lesson && (
+          <div className="lesson-banner">
+            <span className="lesson-banner-kicker">Lesson</span>
+            <b>{lesson.name}</b>
+            <span className="lesson-banner-goal">earn {lesson.stars}★</span>
+            <button className="icon ghost" aria-label="Back to the beginner path" title="Back to the path" disabled={running} onClick={() => goTo('learn')}>
+              ✕
+            </button>
+          </div>
+        )}
+        {screen === 'play' && !lesson && (
           <div className="preset-picker">
             <select
               aria-label="Song preset"
@@ -256,14 +305,10 @@ export default function App() {
               🎤 <span className="wide-only">{settings.testMode ? 'Use ' : 'Enable '}</span>mic
             </button>
           )}
-          <button
-            className={screen === 'tune' ? 'tune-btn on' : 'tune-btn'}
-            onClick={() => {
-              if (screen === 'tune') return setScreen('play')
-              stop()
-              setScreen('tune')
-            }}
-          >
+          <button className={screen === 'learn' ? 'tune-btn on' : 'tune-btn'} onClick={() => goTo(screen === 'learn' ? 'play' : 'learn')}>
+            Learn
+          </button>
+          <button className={screen === 'tune' ? 'tune-btn on' : 'tune-btn'} onClick={() => goTo(screen === 'tune' ? 'play' : 'tune')}>
             Tune
           </button>
           <button className="icon settings-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
@@ -310,7 +355,19 @@ export default function App() {
       )}
 
       {screen === 'tune' ? (
-        <TuneView engine={engine} micOn={mic === 'on'} onEnableMic={() => enableMic()} onBack={() => setScreen('play')} />
+        <TuneView engine={engine} micOn={mic === 'on'} onEnableMic={() => enableMic()} onBack={() => goTo('play')} />
+      ) : screen === 'learn' ? (
+        <Learn
+          engine={engine}
+          view={view}
+          progress={progress}
+          onDone={(id) => setProgress((p) => markDone(p, id))}
+          onBest={(id, count) => setProgress((p) => recordBest(p, id, count))}
+          onReset={() => setProgress(emptyProgress())}
+          onChord={setPreview}
+          onPlaySong={playSong}
+          demo={settings.testMode}
+        />
       ) : (
         <>
           <ScoreHud score={score} />
@@ -323,6 +380,11 @@ export default function App() {
               </div>
             )}
             {running && <JudgmentPopup judgment={score.last} />}
+            {running && settings.adaptiveTempo && tempoNote && (
+              <div className={`tempo-note ${tempoNote.up ? 'up' : 'down'}`} key={`${tempoNote.bpm}-${tempoNote.up}`}>
+                {tempoNote.up ? '▲ Faster' : '▼ Slower'} · {tempoNote.bpm} BPM
+              </div>
+            )}
           </section>
 
 
@@ -372,6 +434,8 @@ export default function App() {
           score={score}
           best={results.best}
           isNewBest={results.isNewBest}
+          note={results.note}
+          onBackToPath={lesson ? () => goTo('learn') : undefined}
           onReplay={() => {
             setResults(null)
             start()

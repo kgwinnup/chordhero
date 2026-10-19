@@ -30,6 +30,12 @@ export function SettingsSheet({ settings, set, running, onDemo, devices, deviceI
         <div className="sheet-group">
           <span className="sheet-label">Gameplay</span>
           <Toggle label="Wait for me" hint="Pause on each chord until you play it" checked={settings.waitMode} onChange={(v) => set('waitMode', v)} />
+          <Toggle
+            label="Adaptive tempo"
+            hint="Speeds up a little after clean chords, slows down after misses"
+            checked={settings.adaptiveTempo}
+            onChange={(v) => set('adaptiveTempo', v)}
+          />
           <Toggle label="Loop" hint="Repeat the sequence" checked={settings.loop} onChange={(v) => set('loop', v)} disabled={running} />
           <Toggle label="Metronome" checked={settings.metronome} onChange={(v) => set('metronome', v)} />
           <Toggle label="Count-in" hint="One bar of clicks before the first chord" checked={settings.countIn} onChange={(v) => set('countIn', v)} />

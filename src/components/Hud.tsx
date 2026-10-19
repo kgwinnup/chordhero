@@ -91,7 +91,24 @@ export function JudgmentPopup({ judgment }: { judgment: Judgment | null }) {
 
 const GRADE_ORDER: Grade[] = ['perfect', 'great', 'good', 'ok', 'miss']
 
-export function Results({ score, best, isNewBest, onReplay, onClose }: { score: ScoreState; best: number; isNewBest: boolean; onReplay: () => void; onClose: () => void }) {
+export function Results({
+  score,
+  best,
+  isNewBest,
+  note,
+  onBackToPath,
+  onReplay,
+  onClose,
+}: {
+  score: ScoreState
+  best: number
+  isNewBest: boolean
+  /** A lesson's verdict */
+  note?: string
+  onBackToPath?: () => void
+  onReplay: () => void
+  onClose: () => void
+}) {
   const stars = starsFor(score)
   const accuracy = score.judged ? Math.round((score.qualitySum / score.judged) * 100) : 0
   const points = useCountUp(score.points)
@@ -122,6 +139,7 @@ export function Results({ score, best, isNewBest, onReplay, onClose }: { score: 
             <span>chords</span>
           </div>
         </div>
+        {note && <p className="results-note">{note}</p>}
         <ul className="grade-counts">
           {GRADE_ORDER.map((g) => (
             <li key={g} className={`grade-${g}`}>
@@ -134,9 +152,15 @@ export function Results({ score, best, isNewBest, onReplay, onClose }: { score: 
           <button className="primary big" onClick={onReplay}>
             ↻ Play again
           </button>
-          <button className="ghost" onClick={onClose}>
-            Close
-          </button>
+          {onBackToPath ? (
+            <button className="ghost" onClick={onBackToPath}>
+              Back to path
+            </button>
+          ) : (
+            <button className="ghost" onClick={onClose}>
+              Close
+            </button>
+          )}
         </div>
       </div>
     </div>

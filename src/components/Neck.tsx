@@ -357,6 +357,7 @@ function drawStrip(ctx: CanvasRenderingContext2D, g: Geo, v: GameView, lay: Layo
     ctx.fillStyle = ink
     ctx.font = `italic 700 ${size}px 'Barlow Condensed', system-ui, sans-serif`
     ctx.textBaseline = 'middle'
+    ctx.textAlign = 'left'
     ctx.fillText(e.chord.name, x + 9, mid + (tagged ? tagSize * 0.5 : 0))
     // Beat dots on the current card: how many of its beats have gone by.
     if (isCurrent && live) {
