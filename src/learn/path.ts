@@ -139,6 +139,9 @@ export function saveProgress(p: Progress) {
   }
 }
 
+/** Chords whose shape lesson is done, in path order. */
+export const learnedChords = (p: Progress): string[] => STEPS.flatMap((s) => (s.kind === 'shape' && p.done.includes(s.id) ? [s.chord] : []))
+
 export const markDone = (p: Progress, id: string): Progress => (p.done.includes(id) ? p : { ...p, done: [...p.done, id] })
 
 export const recordBest = (p: Progress, id: string, count: number): Progress =>

@@ -22,6 +22,23 @@ export const BUILT_IN_PRESETS: Preset[] = PRESETS.map((p, i) => ({
   items: p.chords.map((chordId) => ({ chordId, beats: 4 })),
 }))
 
+/** The preset that draws chords at random from the ones learned on the beginner path. */
+export const RANDOM_PRESET_ID = 'random-learned'
+/** Chords a random run draws: far more than anyone plays in one go. */
+const RANDOM_LENGTH = 400
+
+/** A random run of these chords, never the same one twice in a row (nor across the loop back to the start). */
+export function randomItems(chordIds: string[], count = RANDOM_LENGTH, rand = Math.random): PresetItem[] {
+  const items: PresetItem[] = []
+  for (let i = 0; i < count; i++) {
+    const avoid = [items[i - 1]?.chordId, i === count - 1 && chordIds.length > 2 ? items[0]?.chordId : undefined]
+    const options = chordIds.filter((id) => !avoid.includes(id))
+    const pool = options.length ? options : chordIds
+    items.push({ chordId: pool[Math.floor(rand() * pool.length)], beats: 4 })
+  }
+  return items
+}
+
 export const toSeq = (items: PresetItem[]): SeqItem[] => items.map((it) => ({ ...it, key: newKey() }))
 export const toItems = (seq: SeqItem[]): PresetItem[] => seq.map(({ chordId, beats }) => ({ chordId, beats }))
 

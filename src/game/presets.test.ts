@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { CHORDS_BY_ID } from '../music/chords'
-import { BUILT_IN_PRESETS, loadCustomPresets, saveCustomPresets, toItems, toSeq } from './presets'
+import { BUILT_IN_PRESETS, loadCustomPresets, randomItems, saveCustomPresets, toItems, toSeq } from './presets'
 
 // A minimal localStorage for Node.
 const store = new Map<string, string>()
@@ -65,5 +65,23 @@ describe('custom presets', () => {
     store.set('chordlight.seq', JSON.stringify([{ key: 'x', chordId: 'E', beats: 4 }]))
     saveCustomPresets([])
     expect(loadCustomPresets()).toEqual([])
+  })
+})
+
+describe('random preset', () => {
+  it('never plays the same chord twice in a row, even across the loop', () => {
+    for (const chords of [['Em', 'Am'], ['Em', 'Am', 'E'], ['Em', 'Am', 'E', 'A', 'D']]) {
+      const items = randomItems(chords, 200)
+      expect(items).toHaveLength(200)
+      items.forEach((it, i) => {
+        expect(chords).toContain(it.chordId)
+        expect(it.chordId).not.toBe(items[(i + 1) % items.length].chordId)
+      })
+    }
+  })
+
+  it('uses every learned chord', () => {
+    const chords = ['Em', 'Am', 'E', 'A']
+    expect(new Set(randomItems(chords, 200).map((it) => it.chordId))).toEqual(new Set(chords))
   })
 })

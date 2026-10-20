@@ -9,10 +9,10 @@ import { DetectorLab } from './components/DetectorLab'
 import { TuneView } from './components/TuneView'
 import { Learn } from './components/Learn'
 import { InstallToast } from './components/InstallToast'
-import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, saveCustomPresets, toSeq } from './game/presets'
+import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, RANDOM_PRESET_ID, randomItems, saveCustomPresets, toSeq } from './game/presets'
 import { newKey, type Settings, useGame } from './game/useGame'
 import { starsFor } from './game/scoring'
-import { emptyProgress, loadProgress, markDone, recordBest, saveProgress, type SongStep } from './learn/path'
+import { emptyProgress, learnedChords, loadProgress, markDone, recordBest, saveProgress, type SongStep } from './learn/path'
 import { CHORDS_BY_ID, setGuitar } from './music/chords'
 import { keepAwake } from './wakeLock'
 
@@ -65,17 +65,27 @@ export default function App() {
   const [presetId, setPresetId] = useState(prefs.preset)
   /** The preset editor: open with the preset to edit, or null to build a new one. */
   const [editing, setEditing] = useState<{ preset: Preset | null } | null>(null)
-  const allPresets = [...BUILT_IN_PRESETS, ...customPresets]
+  const [progress, setProgress] = useState(loadProgress)
+  // Random practice: chords from the beginner path, once there are two to switch between.
+  const learnedKey = learnedChords(progress).join(',')
+  const learned = useMemo(() => (learnedKey ? learnedKey.split(',') : []), [learnedKey])
+  const randomPreset: Preset | null = learned.length >= 2 ? { id: RANDOM_PRESET_ID, name: '🎲 Random: chords you know', builtIn: true, items: [] } : null
+  const allPresets = [...(randomPreset ? [randomPreset] : []), ...BUILT_IN_PRESETS, ...customPresets]
   const preset = allPresets.find((p) => p.id === presetId) ?? BUILT_IN_PRESETS[0]
+  const isRandom = preset.id === RANDOM_PRESET_ID
+  /** Bumped to draw a fresh random run. */
+  const [shuffle, setShuffle] = useState(0)
   /** A song from the beginner path, played in place of the chosen preset. */
   const [lesson, setLesson] = useState<SongStep | null>(null)
-  const [progress, setProgress] = useState(loadProgress)
   const seq = useMemo(() => {
     // Swap in the chosen guitar's chord shapes before anything reads them. This runs during render,
     // ahead of the game and every screen below; the sequence holds the shapes, so it's rebuilt too.
     setGuitar(settings.guitar)
-    return toSeq(lesson ? lesson.chords.map((chordId) => ({ chordId, beats: 4 })) : preset.items)
-  }, [preset, lesson, settings.guitar])
+    if (lesson) return toSeq(lesson.chords.map((chordId) => ({ chordId, beats: 4 })))
+    return toSeq(isRandom ? randomItems(learned) : preset.items)
+    // `shuffle` only asks for a new draw.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRandom ? null : preset.items, learned, lesson, settings.guitar, shuffle])
   const [preview, setPreview] = useState<string | null>(null)
   /** 'checking' while we ask the browser whether mic access was already granted, so the popup doesn't flash. */
   const [mic, setMic] = useState<'checking' | 'off' | 'on' | 'error'>('checking')
@@ -94,11 +104,17 @@ export default function App() {
   const running = phase === 'countin' || phase === 'playing'
   const [results, setResults] = useState<{ best: number; isNewBest: boolean; note?: string } | null>(null)
   const prevPhase = useRef(phase)
+  // Once a random run ends, draw the next one: the neck then shows what you'll play next.
+  useEffect(() => {
+    if (!running && isRandom) setShuffle((n) => n + 1)
+  }, [running, isRandom])
 
   // Show results when a song finishes, or when it's stopped after playing something.
   const showResults = () => {
     if (!score.judged) return
-    const key = `${seq.map((it) => `${it.chordId}:${it.beats}`).join(',')}@${settings.bpm}${settings.waitMode ? 'w' : ''}`
+    // A random run is different every time: its best is kept per set of chords instead.
+    const chords = isRandom && !lesson ? `random:${learned.join(',')}` : seq.map((it) => `${it.chordId}:${it.beats}`).join(',')
+    const key = `${chords}@${settings.bpm}${settings.waitMode ? 'w' : ''}`
     const bests = load<Record<string, number>>('chordlight.best', {})
     const prev = bests[key] ?? 0
     if (score.points > prev) save('chordlight.best', { ...bests, [key]: score.points })
@@ -325,6 +341,15 @@ export default function App() {
                 else choosePreset(e.target.value)
               }}
             >
+              <optgroup label="Practice">
+                {randomPreset ? (
+                  <option value={randomPreset.id}>{randomPreset.name}</option>
+                ) : (
+                  <option value={RANDOM_PRESET_ID} disabled>
+                    🎲 Random: learn 2 chords first
+                  </option>
+                )}
+              </optgroup>
               <optgroup label="Songs">
                 {BUILT_IN_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -347,7 +372,7 @@ export default function App() {
               className="icon"
               aria-label={preset.builtIn ? 'Customize this preset' : 'Edit this preset'}
               title={preset.builtIn ? 'Customize' : 'Edit'}
-              disabled={running}
+              disabled={running || isRandom}
               onClick={() => setEditing({ preset })}
             >
               ✎
