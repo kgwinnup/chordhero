@@ -280,8 +280,10 @@ function HintBubble({ hint, idle }: { hint: Hint | null; idle: string }) {
   )
 }
 
-function ShapeLesson({ engine, view, step, demo, sensitivity, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
+function ShapeLesson({ engine, view, step, demo, sensitivity, progress, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
   const chord = CHORDS_BY_ID[step.chord]
+  /** A lesson already passed waits for Start before it listens again. */
+  const [started, setStarted] = useState(() => !progress.done.includes(step.id))
   const layout = useMemo(() => buildLayout([{ key: step.chord, chordId: step.chord, beats: 4 }]), [step.chord])
   const strings = useMemo(() => chord.frets.flatMap((f, s) => (f >= 0 ? [s] : [])), [chord])
   /** Strings that rang when picked on their own. */
@@ -297,7 +299,7 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, onChord, onBack, o
 
   useEffect(() => onChord(step.chord), [onChord, step.chord])
   useStrums(view, step.chord, ignoreBefore, threshold, picking !== null, (heard) => {
-    if (passed) return
+    if (!started || passed) return
     if (picking !== null) {
       if (pickRang(heard.before[picking], heard.after[picking], threshold)) {
         setChecked((c) => [...c, picking])
@@ -326,7 +328,26 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, onChord, onBack, o
         <Neck layout={layout} view={view} loop={false} />
       </div>
       <div className="panel lesson-panel">
-        {passed ? (
+        {!started ? (
+          <div className="drill-intro">
+            <p>
+              You've already learned <b>{chord.name}</b>. Run through it again: pick each string on its own, then strum it cleanly {SHAPE_GOAL} times.
+            </p>
+            <div className="row lesson-actions">
+              <button
+                className="primary big"
+                onClick={() => {
+                  // Whatever is still ringing isn't part of this run.
+                  quiet(0.3)
+                  setStarted(true)
+                }}
+              >
+                Start
+              </button>
+              <button onClick={() => hear(step.chord)}>♪ Hear it</button>
+            </div>
+          </div>
+        ) : passed ? (
           <div className="lesson-pass">
             <h3>You've got {chord.name}! 🤘</h3>
             <p>Every string rang on its own, and three clean strums. Your fingers will remember this shape faster every time you play it.</p>
