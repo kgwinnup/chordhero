@@ -282,12 +282,13 @@ function HintBubble({ hint, idle }: { hint: Hint | null; idle: string }) {
 
 function ShapeLesson({ engine, view, step, demo, sensitivity, progress, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
   const chord = CHORDS_BY_ID[step.chord]
-  /** A lesson already passed waits for Start before it listens again. */
-  const [started, setStarted] = useState(() => !progress.done.includes(step.id))
+  /** A lesson already passed: it waits for Start, then just asks for the clean strums. */
+  const [redo] = useState(() => progress.done.includes(step.id))
+  const [started, setStarted] = useState(!redo)
   const layout = useMemo(() => buildLayout([{ key: step.chord, chordId: step.chord, beats: 4 }]), [step.chord])
   const strings = useMemo(() => chord.frets.flatMap((f, s) => (f >= 0 ? [s] : [])), [chord])
-  /** Strings that rang when picked on their own. */
-  const [checked, setChecked] = useState<number[]>([])
+  /** Strings that rang when picked on their own (all of them, when redoing a lesson). */
+  const [checked, setChecked] = useState<number[]>(() => (redo ? strings : []))
   const [clean, setClean] = useState(0)
   const [hint, setHint] = useState<Hint | null>(null)
   const { ignoreBefore, hear, pluck, quiet } = useHear(engine, demo)
@@ -331,7 +332,7 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, onChord,
         {!started ? (
           <div className="drill-intro">
             <p>
-              You've already learned <b>{chord.name}</b>. Run through it again: pick each string on its own, then strum it cleanly {SHAPE_GOAL} times.
+              You've already learned <b>{chord.name}</b>. Play it again: strum it cleanly {SHAPE_GOAL} times.
             </p>
             <div className="row lesson-actions">
               <button
@@ -350,27 +351,31 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, onChord,
         ) : passed ? (
           <div className="lesson-pass">
             <h3>You've got {chord.name}! 🤘</h3>
-            <p>Every string rang on its own, and three clean strums. Your fingers will remember this shape faster every time you play it.</p>
+            <p>{redo ? 'Three clean strums.' : 'Every string rang on its own, and three clean strums.'} Your fingers will remember this shape faster every time you play it.</p>
             <button className="primary big" onClick={onFinish}>
               Next step →
             </button>
           </div>
         ) : (
           <>
-            <div className="string-check" aria-label="String check">
-              {strings.map((s) => (
-                <span key={s} className={checked.includes(s) ? 'ok' : s === picking ? 'now' : ''}>
-                  {checked.includes(s) ? '✓ ' : ''}
-                  {SPOKEN_STRING[s]}
-                </span>
-              ))}
-            </div>
+            {!redo && (
+              <div className="string-check" aria-label="String check">
+                {strings.map((s) => (
+                  <span key={s} className={checked.includes(s) ? 'ok' : s === picking ? 'now' : ''}>
+                    {checked.includes(s) ? '✓ ' : ''}
+                    {SPOKEN_STRING[s]}
+                  </span>
+                ))}
+              </div>
+            )}
             <HintBubble
               hint={hint}
               idle={
                 picking !== null
                   ? `Hold the ${chord.name} shape and pick just the ${SPOKEN_STRING[picking]} string. Let it ring.`
-                  : `Every string rings! Now strum all of ${chord.name} together.`
+                  : redo
+                    ? `Hold the ${chord.name} shape and strum it.`
+                    : `Every string rings! Now strum all of ${chord.name} together.`
               }
             />
             {picking === strings[0] && (
@@ -386,9 +391,11 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, onChord,
               ) : (
                 <button onClick={() => hear(step.chord)}>♪ Hear it</button>
               )}
-              <button className="link" onClick={onFinish}>
-                I know this one: skip
-              </button>
+              {!redo && (
+                <button className="link" onClick={onFinish}>
+                  I know this one: skip
+                </button>
+              )}
             </div>
           </>
         )}
