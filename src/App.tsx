@@ -12,7 +12,7 @@ import { InstallToast } from './components/InstallToast'
 import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, RANDOM_PRESET_ID, randomItems, saveCustomPresets, toSeq } from './game/presets'
 import { newKey, type Settings, useGame } from './game/useGame'
 import { starsFor } from './game/scoring'
-import { emptyProgress, learnedChords, loadProgress, markDone, recordBest, saveProgress, type SongStep, STEPS } from './learn/path'
+import { emptyProgress, learnedChords, loadProgress, markDone, recordBest, saveProgress, type SongStep } from './learn/path'
 import { CHORDS_BY_ID, setGuitar } from './music/chords'
 import { keepAwake } from './wakeLock'
 
@@ -41,12 +41,6 @@ function load<T>(key: string, fallback: T): T {
 /** Tuning or learning with no strum or tap for this long lets the screen sleep. */
 const IDLE_SLEEP_MS = 3 * 60_000
 
-/** Learn's auto-continue switch. */
-const LEARN_AUTO_KEY = 'chordhero.learnAuto'
-
-/** How long a passed lesson song's results show before auto-continue moves on. */
-const AUTO_NEXT_MS = 3000
-
 /** Whether the mic was on when the app was last used. */
 const MIC_KEY = 'chordhero.mic'
 
@@ -72,11 +66,6 @@ export default function App() {
   /** The preset editor: open with the preset to edit, or null to build a new one. */
   const [editing, setEditing] = useState<{ preset: Preset | null } | null>(null)
   const [progress, setProgress] = useState(loadProgress)
-  const [learnAuto, setLearnAuto] = useState(() => load(LEARN_AUTO_KEY, { on: false }).on)
-  /** Auto-continue: the Learn step to open and start when Learn shows next. */
-  const [learnStartAt, setLearnStartAt] = useState<string | null>(null)
-  /** Auto-continue: start the lesson song once it's on screen. */
-  const [autoPlay, setAutoPlay] = useState(false)
   // Random practice: chords from the beginner path, once there are two to switch between.
   const learnedKey = learnedChords(progress).join(',')
   const learned = useMemo(() => (learnedKey ? learnedKey.split(',') : []), [learnedKey])
@@ -113,7 +102,7 @@ export default function App() {
   }, [])
   const { layout, view, phase, score, ui, start, stop } = useGame(engine, seq, gameSettings, preview, onTempo)
   const running = phase === 'countin' || phase === 'playing'
-  const [results, setResults] = useState<{ best: number; isNewBest: boolean; note?: string; autoNext?: boolean } | null>(null)
+  const [results, setResults] = useState<{ best: number; isNewBest: boolean; note?: string } | null>(null)
   const prevPhase = useRef(phase)
   // Once a random run ends, draw the next one: the neck then shows what you'll play next.
   useEffect(() => {
@@ -130,20 +119,16 @@ export default function App() {
     const prev = bests[key] ?? 0
     if (score.points > prev) save('chordlight.best', { ...bests, [key]: score.points })
     let note: string | undefined
-    let autoNext = false
     if (lesson) {
       const passed = phase === 'done' && starsFor(score) >= lesson.stars
       if (passed) setProgress((p) => markDone(p, lesson.id))
-      autoNext = passed && learnAuto && STEPS.findIndex((s) => s.id === lesson.id) < STEPS.length - 1
       note = passed
-        ? autoNext
-          ? `Lesson passed! Next step starting…`
-          : `Lesson passed! On to the next step.`
+        ? `Lesson passed! On to the next step.`
         : phase === 'done'
           ? `Earn ${lesson.stars}★ to pass. Try a slower tempo, or turn on “Wait for me” in settings.`
           : `Play it all the way through to pass the lesson.`
     }
-    setResults({ best: Math.max(prev, score.points), isNewBest: score.points > prev && score.points > 0, note, autoNext })
+    setResults({ best: Math.max(prev, score.points), isNewBest: score.points > prev && score.points > 0, note })
   }
   useEffect(() => {
     if (phase === 'done' && prevPhase.current !== 'done') showResults()
@@ -173,7 +158,6 @@ export default function App() {
   }, [engine, lastJudgment])
 
   useEffect(() => save('chordlight.settings', settings), [settings])
-  useEffect(() => save(LEARN_AUTO_KEY, { on: learnAuto }), [learnAuto])
   useEffect(() => save('chordlight.prefs', { defaultBeats, preset: presetId }), [defaultBeats, presetId])
   useEffect(() => saveCustomPresets(customPresets), [customPresets])
   useEffect(() => saveProgress(progress), [progress])
@@ -314,37 +298,14 @@ export default function App() {
     setResults(null)
     setPreview(null)
     setLesson(null)
-    setLearnStartAt(null)
-    setAutoPlay(false)
     setScreen(to)
   }
-  const playSong = (step: SongStep, autoStart = false) => {
-    setResults(null)
+  const playSong = (step: SongStep) => {
     setPreview(null)
     setLesson(step)
     set('bpm', step.bpm)
     setScreen('play')
-    setAutoPlay(autoStart)
   }
-  // Auto-continue: start the song once its chords are laid out (start reads the new layout).
-  useEffect(() => {
-    if (!autoPlay || screen !== 'play' || !lesson) return
-    setAutoPlay(false)
-    void start()
-  }, [autoPlay, screen, lesson, start])
-  // Auto-continue after a passed song: on to the next step. Closing the results cancels it.
-  const autoNext = results?.autoNext ? lesson : null
-  useEffect(() => {
-    if (!autoNext) return
-    const t = setTimeout(() => {
-      const after = STEPS[STEPS.findIndex((s) => s.id === autoNext.id) + 1]
-      if (after.kind === 'song') return playSong(after, true)
-      goTo('learn')
-      setLearnStartAt(after.id)
-    }, AUTO_NEXT_MS)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when a passed song's results appear
-  }, [autoNext])
   const changeDevice = (id: string) => {
     setDeviceId(id)
     enableMic(id)
@@ -500,9 +461,6 @@ export default function App() {
           onReset={() => setProgress(emptyProgress())}
           onChord={setPreview}
           onPlaySong={playSong}
-          auto={learnAuto}
-          onAuto={setLearnAuto}
-          startAt={learnStartAt}
           demo={settings.testMode}
           sensitivity={settings.sensitivity}
         />

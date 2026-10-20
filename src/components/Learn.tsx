@@ -30,13 +30,7 @@ interface Props {
   onReset: () => void
   /** Show (and listen for) this chord on the neck */
   onChord: (chordId: string | null) => void
-  /** Play a song step; `autoStart` starts it playing straight away */
-  onPlaySong: (step: SongStep, autoStart?: boolean) => void
-  /** Auto-continue: passing a step opens the next one and starts it */
-  auto: boolean
-  onAuto: (on: boolean) => void
-  /** Open this step and start it straight away (auto-continue, back from a song) */
-  startAt: string | null
+  onPlaySong: (step: SongStep) => void
   /** Demo mode: the app's own strums are what's heard */
   demo: boolean
   /** Detection sensitivity, 0 (strict) … 100 (lenient) */
@@ -46,40 +40,30 @@ interface Props {
 /** The beginner path: learn each chord, drill the changes, then play it in a song. */
 export function Learn(props: Props) {
   const { progress, onChord } = props
-  const [openId, setOpenId] = useState<string | null>(props.startAt)
-  /** The open step was reached by auto-continue: it starts without waiting for a tap. */
-  const [autoStart, setAutoStart] = useState(props.startAt !== null)
+  const [openId, setOpenId] = useState<string | null>(null)
   const step = STEPS.find((s) => s.id === openId) ?? null
 
   useEffect(() => () => onChord(null), [onChord])
 
   const open = (s: Step) => {
-    setAutoStart(false)
     if (s.kind === 'song') props.onPlaySong(s)
     else setOpenId(s.id)
   }
-  const finish = (id: string, passed: boolean) => {
+  const finish = (id: string) => {
     props.onDone(id)
+    // Straight on to the next step, unless it's a song (that's its own screen).
     const i = STEPS.findIndex((s) => s.id === id)
     const after = STEPS[i + 1]
-    const auto = props.auto && passed
-    // Straight on to the next step. A song is its own screen: only auto-continue goes there.
-    if (after?.kind === 'song') {
-      if (auto) props.onPlaySong(after, true)
-      else setOpenId(null)
-    } else {
-      setAutoStart(auto)
-      setOpenId(after?.id ?? null)
-    }
+    if (after && after.kind !== 'song') setOpenId(after.id)
+    else setOpenId(null)
   }
   const back = () => {
     setOpenId(null)
     onChord(null)
   }
 
-  const lesson = { ...props, autoStart, onBack: back }
-  if (step?.kind === 'shape') return <ShapeLesson key={step.id} {...lesson} step={step} onFinish={(passed) => finish(step.id, passed)} />
-  if (step?.kind === 'changes') return <ChangesDrill key={step.id} {...lesson} step={step} onFinish={(passed) => finish(step.id, passed)} />
+  if (step?.kind === 'shape') return <ShapeLesson key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
+  if (step?.kind === 'changes') return <ChangesDrill key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
 
   const up = nextStep(progress)
   const doneCount = progress.done.length
@@ -94,14 +78,6 @@ export function Learn(props: Props) {
       <div className="learn-bar" aria-hidden>
         <i style={{ width: `${(doneCount / STEPS.length) * 100}%` }} />
       </div>
-      <label className="toggle learn-auto">
-        <span className="toggle-text">
-          Auto-continue
-          <small>Pass a step and the next one starts by itself</small>
-        </span>
-        <input type="checkbox" checked={props.auto} onChange={(e) => props.onAuto(e.target.checked)} />
-        <span className="track" aria-hidden />
-      </label>
 
       {up ? (
         <button className="learn-up" onClick={() => open(up)}>
@@ -274,27 +250,8 @@ function useHear(engine: AudioEngine, demo: boolean) {
 }
 
 interface LessonProps extends Props {
-  /** Start without waiting for a tap (auto-continue) */
-  autoStart: boolean
   onBack: () => void
-  /** Leave for the next step: `passed` when the goal was met, not skipped */
-  onFinish: (passed: boolean) => void
-}
-
-/** How long a passed step's result shows before auto-continue moves on. */
-const AUTO_NEXT_MS = 2500
-
-/** Auto-continue: once `passed`, move on after a moment. */
-function useAutoNext(on: boolean, passed: boolean, next: () => void) {
-  const cb = useRef(next)
-  useLayoutEffect(() => {
-    cb.current = next
-  })
-  useEffect(() => {
-    if (!on || !passed) return
-    const t = setTimeout(() => cb.current(), AUTO_NEXT_MS)
-    return () => clearTimeout(t)
-  }, [on, passed])
+  onFinish: () => void
 }
 
 function LessonHead({ title, goal, onBack, children }: { title: string; goal: string; onBack: () => void; children?: React.ReactNode }) {
@@ -323,11 +280,11 @@ function HintBubble({ hint, idle }: { hint: Hint | null; idle: string }) {
   )
 }
 
-function ShapeLesson({ engine, view, step, demo, sensitivity, progress, auto, autoStart, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
+function ShapeLesson({ engine, view, step, demo, sensitivity, progress, onChord, onBack, onFinish }: LessonProps & { step: ShapeStep }) {
   const chord = CHORDS_BY_ID[step.chord]
   /** A lesson already passed: it waits for Start, then just asks for the clean strums. */
   const [redo] = useState(() => progress.done.includes(step.id))
-  const [started, setStarted] = useState(!redo || autoStart)
+  const [started, setStarted] = useState(!redo)
   const layout = useMemo(() => buildLayout([{ key: step.chord, chordId: step.chord, beats: 4 }]), [step.chord])
   const strings = useMemo(() => chord.frets.flatMap((f, s) => (f >= 0 ? [s] : [])), [chord])
   /** Strings that rang when picked on their own (all of them, when redoing a lesson). */
@@ -342,7 +299,6 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, auto, au
   const threshold = thresholdFor(sensitivity)
 
   useEffect(() => onChord(step.chord), [onChord, step.chord])
-  useAutoNext(auto, passed, () => onFinish(true))
   useStrums(view, step.chord, ignoreBefore, threshold, picking !== null, (heard) => {
     if (!started || passed) return
     if (picking !== null) {
@@ -396,8 +352,7 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, auto, au
           <div className="lesson-pass">
             <h3>You've got {chord.name}! 🤘</h3>
             <p>{redo ? 'Three clean strums.' : 'Every string rang on its own, and three clean strums.'} Your fingers will remember this shape faster every time you play it.</p>
-            {auto && <p className="auto-next">Next step starting…</p>}
-            <button className="primary big" onClick={() => onFinish(true)}>
+            <button className="primary big" onClick={onFinish}>
               Next step →
             </button>
           </div>
@@ -437,7 +392,7 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, auto, au
                 <button onClick={() => hear(step.chord)}>♪ Hear it</button>
               )}
               {!redo && (
-                <button className="link" onClick={() => onFinish(false)}>
+                <button className="link" onClick={onFinish}>
                   I know this one: skip
                 </button>
               )}
@@ -449,9 +404,9 @@ function ShapeLesson({ engine, view, step, demo, sensitivity, progress, auto, au
   )
 }
 
-function ChangesDrill({ engine, view, step, demo, sensitivity, progress, auto, autoStart, onChord, onBest, onBack, onFinish }: LessonProps & { step: ChangesStep }) {
+function ChangesDrill({ engine, view, step, demo, sensitivity, progress, onChord, onBest, onBack, onFinish }: LessonProps & { step: ChangesStep }) {
   const [a, b] = step.chords
-  const [phase, setPhase] = useState<'ready' | 'running' | 'done'>(autoStart ? 'running' : 'ready')
+  const [phase, setPhase] = useState<'ready' | 'running' | 'done'>('ready')
   const [target, setTarget] = useState(a)
   /** Clean chords played: the first just starts you off, every one after it is a change. */
   const [played, setPlayed] = useState(0)
@@ -465,7 +420,6 @@ function ChangesDrill({ engine, view, step, demo, sensitivity, progress, auto, a
   const layout = useMemo(() => buildLayout([{ key: target, chordId: target, beats: 4 }]), [target])
 
   useEffect(() => onChord(target), [onChord, target])
-  useAutoNext(auto, phase === 'done' && passed, () => onFinish(true))
 
   useEffect(() => {
     if (phase !== 'running') return
@@ -529,7 +483,7 @@ function ChangesDrill({ engine, view, step, demo, sensitivity, progress, auto, a
               <button className="primary big" onClick={startDrill}>
                 Start the minute
               </button>
-              <button className="link" onClick={() => onFinish(false)}>
+              <button className="link" onClick={onFinish}>
                 Skip
               </button>
             </div>
@@ -560,10 +514,9 @@ function ChangesDrill({ engine, view, step, demo, sensitivity, progress, auto, a
                 ? `You beat the goal of ${step.goal}. Come back tomorrow and try to beat ${Math.max(best, changes)}.`
                 : `The goal is ${step.goal}. Watch which chord slows you down and place those fingers first. Everyone gets faster with a minute a day.`}
             </p>
-            {auto && passed && <p className="auto-next">Next step starting…</p>}
             <div className="row lesson-actions">
               {passed && (
-                <button className="primary big" onClick={() => onFinish(true)}>
+                <button className="primary big" onClick={onFinish}>
                   Next step →
                 </button>
               )}
