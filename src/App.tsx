@@ -6,7 +6,6 @@ import { MicGate } from './components/MicGate'
 import { SettingsSheet } from './components/SettingsSheet'
 import { PresetEditor } from './components/PresetEditor'
 import { DetectorLab } from './components/DetectorLab'
-import { TuneView } from './components/TuneView'
 import { Learn } from './components/Learn'
 import { InstallToast } from './components/InstallToast'
 import { BUILT_IN_PRESETS, loadCustomPresets, type Preset, type PresetItem, RANDOM_PRESET_ID, randomItems, saveCustomPresets, toSeq } from './game/presets'
@@ -38,7 +37,7 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
-/** Tuning or learning with no strum or tap for this long lets the screen sleep. */
+/** Learning with no strum or tap for this long lets the screen sleep. */
 const IDLE_SLEEP_MS = 3 * 60_000
 
 /** Whether the mic was on when the app was last used. */
@@ -266,9 +265,9 @@ export default function App() {
   }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
-  const [screen, setScreen] = useState<'play' | 'tune' | 'learn'>('play')
-  // Your hands are on the guitar, not the phone: keep the screen on while playing, tuning or
-  // learning. But let it sleep once tuning or learning has gone quiet (no strum, no tap) for a while.
+  const [screen, setScreen] = useState<'play' | 'learn'>('play')
+  // Your hands are on the guitar, not the phone: keep the screen on while playing or learning.
+  // But let it sleep once learning has gone quiet (no strum, no tap) for a while.
   const [idle, setIdle] = useState(false)
   useEffect(() => {
     if (running || screen === 'play') return setIdle(false)
@@ -292,7 +291,7 @@ export default function App() {
     }
   }, [engine, running, screen])
   useEffect(() => keepAwake(running || (screen !== 'play' && !idle)), [running, screen, idle])
-  const goTo = (to: 'play' | 'tune' | 'learn') => {
+  const goTo = (to: 'play' | 'learn') => {
     if (screen === to) return
     stop()
     setResults(null)
@@ -399,9 +398,9 @@ export default function App() {
             </button>
           )}
           <nav className="screens" aria-label="Screens">
-            {(['play', 'learn', 'tune'] as const).map((to) => (
+            {(['play', 'learn'] as const).map((to) => (
               <button key={to} className={screen === to ? 'on' : ''} aria-current={screen === to ? 'page' : undefined} onClick={() => goTo(to)}>
-                {to === 'play' ? 'Play' : to === 'learn' ? 'Learn' : 'Tune'}
+                {to === 'play' ? 'Play' : 'Learn'}
               </button>
             ))}
           </nav>
@@ -449,9 +448,7 @@ export default function App() {
         />
       )}
 
-      {screen === 'tune' ? (
-        <TuneView engine={engine} micOn={mic === 'on'} onEnableMic={() => enableMic()} onBack={() => goTo('play')} />
-      ) : screen === 'learn' ? (
+      {screen === 'learn' ? (
         <Learn
           engine={engine}
           view={view}

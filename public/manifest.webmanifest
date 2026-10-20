@@ -1,7 +1,7 @@
 {
   "name": "ChordHero",
   "short_name": "ChordHero",
-  "description": "Learn guitar chords: play along, see each string light up as it rings, and tune up.",
+  "description": "Learn guitar chords: play along, and see each string light up as it rings.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

@@ -254,7 +254,7 @@ export class AudioEngine {
     src.start(Math.max(when, this.ctx.currentTime))
   }
 
-  /** Play one note, e.g. a tuner's reference pitch. */
+  /** Play one note, e.g. a single string of a chord. */
   pluck(midi: number, when = this.ctx.currentTime, analyse = false) {
     this.sounding(when + 3)
     const src = this.ctx.createBufferSource()

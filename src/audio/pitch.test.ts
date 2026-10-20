@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { midiToFreq } from '../music/chords'
-import { centsOff, INSTRUMENTS, noteLabel, searchRange } from '../music/tunings'
+import { GUITARS, midiToFreq, NOTE_NAMES } from '../music/chords'
 import { yinPitch } from './pitch'
+
+const noteLabel = (midi: number) => `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`
+const centsOff = (freq: number, targetMidi: number) => 1200 * Math.log2(freq / midiToFreq(targetMidi))
+/** Search within 9 semitones of the expected note. */
+const searchRange = (targetMidi: number) => ({ minHz: midiToFreq(targetMidi - 9), maxHz: midiToFreq(targetMidi + 9) })
 
 /** A plucked string: a fundamental plus decaying overtones (the 2nd louder than the fundamental, as small mics often hear it), and a little noise. */
 function pluck(freq: number, sampleRate: number, length = 16384, seed = 3) {
@@ -19,11 +23,9 @@ function pluck(freq: number, sampleRate: number, length = 16384, seed = 3) {
 }
 
 describe.each([48000, 44100])('at %i Hz', (sampleRate) => {
-  const strings = INSTRUMENTS.flatMap((inst) =>
-    inst.tunings.flatMap((t) => t.notes.map((midi, i) => [`${inst.name} ${t.name}, string ${i + 1} (${noteLabel(midi)})`, midi] as const)),
-  )
+  const strings = GUITARS.flatMap((g) => g.open.map((midi, i) => [`${g.name}, string ${i + 1} (${noteLabel(midi)})`, midi] as const))
 
-  it.each(strings)('the tuner hears %s in tune', (_, midi) => {
+  it.each(strings)('hears %s in tune', (_, midi) => {
     const p = yinPitch(pluck(midiToFreq(midi), sampleRate), sampleRate, searchRange(midi))
     expect(p).not.toBeNull()
     expect(p!.note).toBe(noteLabel(midi))

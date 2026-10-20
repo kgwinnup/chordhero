@@ -20,8 +20,8 @@ const YIN_THRESHOLD = 0.15
 /**
  * Pitch of a single note with YIN (de Cheveigné & Kawahara) on the newest samples of `samples`.
  * Unlike picking the loudest spectral peak, it isn't fooled into octave errors by a plucked
- * string's strong overtones. Searching a narrow range around the expected note (as the tuner
- * does) rules out octave mistakes entirely.
+ * string's strong overtones. Searching a narrow range around the expected note rules out
+ * octave mistakes entirely.
  */
 export function yinPitch(samples: Float32Array, sampleRate: number, { minHz = 70, maxHz = 1100 }: PitchRange = {}): Pitch | null {
   // The window must hold at least two periods of the lowest pitch (a bass's low E is 41 Hz).
