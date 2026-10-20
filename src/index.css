@@ -2149,3 +2149,12 @@ h3 {
   height: 16px;
   vertical-align: -2px;
 }
+
+.learn-auto {
+  min-height: 40px;
+  font-size: 17px;
+}
+.auto-next {
+  color: var(--muted);
+  font-size: 15px;
+}
