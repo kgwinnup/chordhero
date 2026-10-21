@@ -4,7 +4,7 @@ import { emptyProgress, isUnlocked, loadProgress, markDone, nextStep, PATH, reco
 
 describe('the beginner path', () => {
   it('uses only real chords and unique step ids', () => {
-    const chords = STEPS.flatMap((s) => (s.kind === 'shape' ? [s.chord] : s.chords))
+    const chords = STEPS.flatMap((s) => (s.kind === 'shape' || s.kind === 'strum' ? [s.chord] : s.chords))
     for (const id of chords) expect(CHORDS_BY_ID[id], id).toBeDefined()
     expect(new Set(STEPS.map((s) => s.id)).size).toBe(STEPS.length)
   })
@@ -13,7 +13,7 @@ describe('the beginner path', () => {
     const learned = new Set<string>()
     for (const s of STEPS) {
       if (s.kind === 'shape') learned.add(s.chord)
-      else for (const c of s.chords) expect(learned.has(c), `${s.id} uses ${c} before it's taught`).toBe(true)
+      else for (const c of s.kind === 'strum' ? [s.chord] : s.chords) expect(learned.has(c), `${s.id} uses ${c} before it's taught`).toBe(true)
     }
   })
 
@@ -34,6 +34,15 @@ describe('the beginner path', () => {
     expect(nextStep(p)?.id).toBe(STEPS[1].id)
     for (const s of STEPS) p = markDone(p, s.id)
     expect(nextStep(p)).toBeNull()
+  })
+
+  it("doesn't let a strumming step lock the steps after it", () => {
+    const i = STEPS.findIndex((s) => s.kind === 'strum')
+    let p = emptyProgress()
+    for (const s of STEPS.slice(0, i)) p = markDone(p, s.id)
+    expect(isUnlocked(p, STEPS[i].id)).toBe(true)
+    expect(isUnlocked(p, STEPS[i + 1].id)).toBe(true)
+    expect(nextStep(p)?.id).toBe(STEPS[i].id)
   })
 
   it('keeps the best drill score', () => {

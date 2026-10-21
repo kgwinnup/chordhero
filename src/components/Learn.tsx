@@ -18,7 +18,9 @@ import {
   STEPS,
   stepGoal,
   stepTitle,
+  type StrumStep,
 } from '../learn/path'
+import { gradeStrums, parsePattern, SLOT_COUNTS, type SlotGrade, SLOTS, type Stroke, STRUM_BARS, strumScore } from '../learn/strum'
 import { Neck } from './Neck'
 
 interface Props {
@@ -64,6 +66,7 @@ export function Learn(props: Props) {
 
   if (step?.kind === 'shape') return <ShapeLesson key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
   if (step?.kind === 'changes') return <ChangesDrill key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
+  if (step?.kind === 'strum') return <StrumDrill key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
 
   const up = nextStep(progress)
   const doneCount = progress.done.length
@@ -119,7 +122,7 @@ export function Learn(props: Props) {
                       <span className="step-title">{stepTitle(s)}</span>
                       <span className="step-goal">
                         {stepGoal(s)}
-                        {best ? ` · best ${best}` : ''}
+                        {best ? ` · best ${best}${s.kind === 'strum' ? '%' : ''}` : ''}
                       </span>
                     </button>
                   </li>
@@ -521,6 +524,201 @@ function ChangesDrill({ engine, view, step, demo, sensitivity, progress, onChord
                 </button>
               )}
               <button className={passed ? '' : 'primary big'} onClick={startDrill}>
+                ↻ Try again
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/** Mic input reaches the analyser about this long after the strum. */
+const MIC_LATENCY = 0.03
+/** A strum counts once the chord is heard ringing within this long of it: a click or a tap isn't a strum. */
+const CONFIRM_SECONDS = 0.25
+/** Clicks and demo strums are scheduled this far ahead, in seconds. */
+const LOOKAHEAD = 0.25
+
+function PatternRow({ pattern, grades, current }: { pattern: Stroke[]; grades?: SlotGrade[]; current?: number }) {
+  return (
+    <div className="strum-row" aria-label="Strumming pattern">
+      {pattern.map((s, i) => (
+        <div key={i} className={`strum-slot ${s === '-' ? 'is-rest' : ''} ${grades?.[i] ?? ''} ${current === i ? 'now' : ''}`}>
+          <span className="strum-arrow" aria-label={s === 'D' ? 'down' : s === 'U' ? 'up' : 'rest'}>
+            {s === 'D' ? '↓' : s === 'U' ? '↑' : '·'}
+          </span>
+          <span className="strum-count">{SLOT_COUNTS[i]}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StrumDrill({ engine, view, step, demo, progress, onChord, onBest, onBack, onFinish }: LessonProps & { step: StrumStep }) {
+  const chord = CHORDS_BY_ID[step.chord]
+  const pattern = useMemo(() => parsePattern(step.pattern), [step.pattern])
+  const layout = useMemo(() => buildLayout([{ key: step.chord, chordId: step.chord, beats: 4 }]), [step.chord])
+  const beat = 60 / step.bpm
+  const slotSec = beat / 2
+  const [phase, setPhase] = useState<'ready' | 'running' | 'done'>('ready')
+  /** AudioContext time of the first slot of the first bar, after the count-in */
+  const [start, setStart] = useState(0)
+  /** Strums heard, at the time they were played */
+  const [attacks, setAttacks] = useState<number[]>([])
+  /** The audio clock, updated as each slot comes round */
+  const [now, setNow] = useState(0)
+  const best = progress.best[step.id] ?? 0
+
+  useEffect(() => onChord(step.chord), [onChord, step.chord])
+
+  const begin = async () => {
+    await engine.resume()
+    // A bar of count-in, then the drill.
+    setAttacks([])
+    setStart(engine.ctx.currentTime + 0.3 + 4 * beat)
+    setNow(engine.ctx.currentTime)
+    setPhase('running')
+  }
+
+  const hearIt = async () => {
+    await engine.resume()
+    const t0 = engine.ctx.currentTime + 0.2
+    for (let b = 0; b < 4; b++) engine.click(t0 + b * beat, b === 0)
+    for (let i = 0; i < SLOTS; i++) if (pattern[i] !== '-') engine.strum(chord, t0 + i * slotSec)
+  }
+
+  // While it runs: collect strums, and move the playhead slot by slot.
+  useEffect(() => {
+    if (phase !== 'running') return
+    let raf = 0
+    let seen = view.current.heard.attack
+    let pending: number[] = []
+    let shown = -Infinity
+    const end = start + STRUM_BARS * SLOTS * slotSec
+    const latency = demo ? 0 : MIC_LATENCY
+    // Clicks (and in demo mode, strums) are scheduled just ahead, so Stop stops them.
+    let nextClick = -4
+    let nextStrum = 0
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const h = view.current.heard
+      const t = engine.ctx.currentTime
+      for (; nextClick < STRUM_BARS * 4 && start + nextClick * beat < t + LOOKAHEAD; nextClick++) {
+        engine.click(start + nextClick * beat, nextClick % 4 === 0)
+      }
+      for (; demo && nextStrum < STRUM_BARS * SLOTS && start + nextStrum * slotSec < t + LOOKAHEAD; nextStrum++) {
+        if (pattern[nextStrum % SLOTS] === '-') continue
+        // Mostly in time, now and then a little off: something to grade.
+        const off = Math.random() < 0.85 ? (Math.random() - 0.5) * 0.04 : (Math.random() - 0.5) * 0.18
+        engine.strum(chord, start + nextStrum * slotSec + off, true)
+      }
+      if (h.attack > seen) {
+        seen = h.attack
+        if (h.attack >= start - slotSec) pending.push(h.attack)
+      }
+      const rings = h.chordId === step.chord && h.strings.filter(Boolean).length >= 2
+      const confirmed = rings ? pending.filter((a) => h.at >= a) : []
+      if (confirmed.length) setAttacks((list) => [...list, ...confirmed.map((a) => a - latency)])
+      pending = pending.filter((a) => !confirmed.includes(a) && t - a < CONFIRM_SECONDS)
+      const slot = Math.floor((t - start) / slotSec)
+      if (slot !== shown) {
+        shown = slot
+        setNow(t)
+      }
+      if (t > end + 0.2) {
+        setNow(t)
+        setPhase('done')
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [phase, start, beat, slotSec, demo, engine, view, step.chord, chord, pattern])
+
+  const grades = gradeStrums(pattern, STRUM_BARS, start, slotSec, attacks, phase === 'done' ? Infinity : now)
+  const score = strumScore(grades)
+  const passed = score >= step.goal
+
+  useEffect(() => {
+    if (phase === 'done') onBest(step.id, score)
+    // Record once, when the drill ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
+  const barSlots = STRUM_BARS * SLOTS
+  const playing = Math.floor((now - start) / slotSec)
+  const bar = Math.min(STRUM_BARS - 1, Math.max(0, Math.floor(playing / SLOTS)))
+  const countIn = Math.ceil((start - now) / beat)
+  const tip =
+    grades.drift < -0.03
+      ? "You're rushing: most strums came a little early. Let the click lead."
+      : grades.drift > 0.03
+        ? "You're dragging: most strums came a little late. Get your hand moving before the click."
+        : grades.extras > 0
+          ? 'Some strums landed on the rests. Keep your hand moving, but miss the strings where there is no arrow.'
+          : 'Keep your hand moving down and up the whole time, even through the rests.'
+
+  return (
+    <section className="learn lesson">
+      <LessonHead title={stepTitle(step)} goal={`Goal: ${step.goal}% in time at ${step.bpm} BPM${best ? ` · best ${best}%` : ''}`} onBack={onBack} />
+      <div className="stage">
+        <Neck layout={layout} view={view} loop={false} />
+        {phase === 'running' && (
+          <div className="drill-hud" aria-live="off">
+            <span className="drill-time">{countIn > 0 ? countIn : `Bar ${bar + 1}/${STRUM_BARS}`}</span>
+            <span className="drill-count">
+              <b key={grades.hits}>{grades.hits}</b> / {pattern.filter((s) => s !== '-').length * STRUM_BARS}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="panel lesson-panel">
+        {phase === 'ready' && (
+          <div className="drill-intro">
+            <PatternRow pattern={pattern} />
+            <p>
+              Hold <b>{chord.name}</b> and strum along with the click: <b>↓</b> on the numbers, <b>↑</b> on the &amp;s. Keep your hand moving down and up the whole
+              time, and only touch the strings where there's an arrow. After a bar of count-in, it plays {STRUM_BARS} bars.
+            </p>
+            <div className="row lesson-actions">
+              <button className="primary big" onClick={begin}>
+                Start
+              </button>
+              <button onClick={hearIt}>♪ Hear it</button>
+              <button className="link" onClick={onFinish}>
+                Skip
+              </button>
+            </div>
+          </div>
+        )}
+        {phase === 'running' && (
+          <>
+            <PatternRow pattern={pattern} grades={grades.slots.slice(bar * SLOTS, (bar + 1) * SLOTS)} current={playing >= 0 && playing < barSlots ? playing % SLOTS : undefined} />
+            <div className="row lesson-actions">
+              <button className="ghost" onClick={() => setPhase('done')}>
+                Stop
+              </button>
+            </div>
+          </>
+        )}
+        {phase === 'done' && (
+          <div className="lesson-pass">
+            <h3>
+              {score}% in time {passed ? '🤘' : ''}
+            </h3>
+            <PatternRow pattern={pattern} grades={grades.slots.slice((STRUM_BARS - 1) * SLOTS)} />
+            <p>
+              {grades.hits} of {grades.expected} strums in time
+              {grades.extras ? `, ${grades.extras} extra` : ''}. {passed ? `You beat the goal of ${step.goal}%.` : `The goal is ${step.goal}%.`} {tip}
+            </p>
+            <div className="row lesson-actions">
+              {passed && (
+                <button className="primary big" onClick={onFinish}>
+                  Next step →
+                </button>
+              )}
+              <button className={passed ? '' : 'primary big'} onClick={begin}>
                 ↻ Try again
               </button>
             </div>

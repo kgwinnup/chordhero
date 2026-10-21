@@ -27,7 +27,20 @@ export interface SongStep {
   stars: number
 }
 
-export type Step = ShapeStep | ChangesStep | SongStep
+/** Strum a rhythm pattern on one chord, in time with the click. */
+export interface StrumStep {
+  id: string
+  kind: 'strum'
+  name: string
+  /** One bar of eighth notes: D down, U up, - rest */
+  pattern: string
+  chord: string
+  bpm: number
+  /** Percent of the pattern in time to pass */
+  goal: number
+}
+
+export type Step = ShapeStep | ChangesStep | SongStep | StrumStep
 
 export interface Unit {
   title: string
@@ -41,6 +54,7 @@ export const DRILL_SECONDS = 60
 
 const shape = (chord: string): ShapeStep => ({ id: `shape-${chord}`, kind: 'shape', chord })
 const changes = (a: string, b: string, goal: number): ChangesStep => ({ id: `changes-${a}-${b}`, kind: 'changes', chords: [a, b], goal })
+const strum = (id: string, name: string, pattern: string, chord: string, bpm: number, goal = 75): StrumStep => ({ id: `strum-${id}`, kind: 'strum', name, pattern, chord, bpm, goal })
 const song = (id: string, name: string, chords: string[], bpm: number, stars = 3): SongStep => ({ id: `song-${id}`, kind: 'song', name, chords, bpm, stars })
 
 /**
@@ -52,17 +66,17 @@ export const PATH: Unit[] = [
   {
     title: 'E minor',
     blurb: 'Two fingers, every string. Your first chord.',
-    steps: [shape('Em')],
+    steps: [shape('Em'), strum('quarters', 'Quarter notes', 'D-D-D-D-', 'Em', 70)],
   },
   {
     title: 'A minor',
     blurb: 'Three fingers, and your first chord change.',
-    steps: [shape('Am'), changes('Em', 'Am', 15), song('em-am', 'Em – Am', ['Em', 'Am', 'Em', 'Am', 'Em', 'Am', 'Em', 'Am'], 60)],
+    steps: [shape('Am'), changes('Em', 'Am', 15), strum('eighths', 'Eighth notes', 'DUDUDUDU', 'Am', 60), song('em-am', 'Em – Am', ['Em', 'Am', 'Em', 'Am', 'Em', 'Am', 'Em', 'Am'], 60)],
   },
   {
     title: 'E major',
     blurb: 'The A minor shape, moved up one string.',
-    steps: [shape('E'), changes('Am', 'E', 15), song('am-e', 'Am – E', ['Am', 'E', 'Am', 'E', 'Am', 'E', 'Am', 'E'], 60)],
+    steps: [shape('E'), changes('Am', 'E', 15), strum('campfire', 'The campfire strum', 'D-DU-UDU', 'E', 60), song('am-e', 'Am – E', ['Am', 'E', 'Am', 'E', 'Am', 'E', 'Am', 'E'], 60)],
   },
   {
     title: 'A major',
@@ -97,19 +111,21 @@ export const STEPS: Step[] = PATH.flatMap((u) => u.steps)
 export function stepTitle(step: Step) {
   if (step.kind === 'shape') return `Learn ${CHORDS_BY_ID[step.chord].name}`
   if (step.kind === 'changes') return `${step.chords.join(' ↔ ')} changes`
+  if (step.kind === 'strum') return `Strum: ${step.name}`
   return `Play “${step.name}”`
 }
 
 export function stepGoal(step: Step) {
   if (step.kind === 'shape') return `${SHAPE_GOAL} clean strums`
   if (step.kind === 'changes') return `${step.goal} changes in a minute`
+  if (step.kind === 'strum') return `${step.goal}% in time at ${step.bpm} BPM`
   return `${step.stars}★ at ${step.bpm} BPM`
 }
 
 export interface Progress {
   /** Steps passed (or skipped) */
   done: string[]
-  /** Best changes-per-minute for each drill */
+  /** Best score for each drill: changes per minute, or percent in time for a strum */
   best: Record<string, number>
 }
 
@@ -150,8 +166,11 @@ export const recordBest = (p: Progress, id: string, count: number): Progress =>
 /** The step to do next: the first one not yet done, or null once the path is finished. */
 export const nextStep = (p: Progress): Step | null => STEPS.find((s) => !p.done.includes(s.id)) ?? null
 
-/** A step is open once every step before it is done. */
+/**
+ * A step is open once every step before it is done. Strumming steps don't hold up the rest:
+ * they came later, and progress made before them shouldn't lock again.
+ */
 export function isUnlocked(p: Progress, id: string) {
   const i = STEPS.findIndex((s) => s.id === id)
-  return i >= 0 && STEPS.slice(0, i).every((s) => p.done.includes(s.id))
+  return i >= 0 && STEPS.slice(0, i).every((s) => s.kind === 'strum' || p.done.includes(s.id))
 }

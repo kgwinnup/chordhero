@@ -70,6 +70,8 @@ export interface Heard {
   at: number
   /** AudioContext time of the last strum's onset */
   onset: number
+  /** AudioContext time of the last strum's attack, timed finely enough for rhythm */
+  attack: number
   chordId: string | null
   strings: boolean[]
   /** It sounds like the chord, and more like it than any other */
@@ -161,7 +163,7 @@ export function useGame(
     onTempoRef.current = onTempo
   })
 
-  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(MAX_STRINGS).fill(false), tone: null, light: emptyLight(), heard: { at: 0, onset: 0, chordId: null, strings: Array(MAX_STRINGS).fill(false), soundsRight: false, notes: Array(MAX_STRINGS).fill(0) } })
+  const view = useRef<GameView>({ phase: 'idle', pos: -1.5, results: new Map(), targetAbs: null, lastJudgment: null, multiplier: 1, display: null, ringing: Array(MAX_STRINGS).fill(false), tone: null, light: emptyLight(), heard: { at: 0, onset: 0, attack: -Infinity, chordId: null, strings: Array(MAX_STRINGS).fill(false), soundsRight: false, notes: Array(MAX_STRINGS).fill(0) } })
   const internal = useRef({
     lastT: 0,
     nextClick: 0,
@@ -355,7 +357,7 @@ export function useGame(
       const a = engine.analyze(analysisChord, threshold)
       // It has to sound like this chord, and more like it than like any other chord.
       const soundsRight = a.gate && a.match >= minMatch && a.match >= a.rival - RIVAL_LEEWAY
-      v.heard = { at: now, onset: a.lastOnsetAt, chordId: analysisChord?.id ?? null, strings: a.strings, soundsRight, notes: a.notes }
+      v.heard = { at: now, onset: a.lastOnsetAt, attack: a.lastAttackAt, chordId: analysisChord?.id ?? null, strings: a.strings, soundsRight, notes: a.notes }
 
       if (target && (v.phase === 'playing' || v.phase === 'countin')) {
         const inWindow = v.pos >= target.start - EARLY_BEATS && v.pos < target.end && !v.results.has(target.abs)

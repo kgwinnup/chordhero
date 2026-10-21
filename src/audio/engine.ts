@@ -1,4 +1,5 @@
 import { type Chord, CHORDS, MAX_STRINGS, midiToFreq, stringMidi } from '../music/chords'
+import { AttackDetector } from './attack'
 import { Crowd } from './crowd'
 import { chordFit, isNoiseLike, mutedRinging, noteLevels, scoreStrings } from './detect'
 import { type Pitch, type PitchRange, yinPitch } from './pitch'
@@ -20,6 +21,8 @@ export interface Analysis {
   rival: number
   /** AudioContext time of the last detected strum */
   lastOnsetAt: number
+  /** AudioContext time of the last strum attack, timed to a few ms (see `AttackDetector`) */
+  lastAttackAt: number
   /** Per string: dB its note stands above the noise (see `noteLevels`) */
   notes: number[]
   /** Muted strings (✕) ringing anyway: hit by mistake (see `mutedRinging`) */
@@ -62,6 +65,7 @@ export class AudioEngine {
   private wasIndependent: boolean[] = new Array(MAX_STRINGS).fill(false)
   private ringChordId: string | null = null
   private rmsHistory: { t: number; v: number }[] = []
+  private attacks = new AttackDetector()
   private strumCache = new Map<string, AudioBuffer>()
   lastOnsetAt = -Infinity
   clickVolume = 0.5
@@ -146,6 +150,7 @@ export class AudioEngine {
     old.close().catch(() => {})
     this.strumCache.clear()
     this.rmsHistory = []
+    this.attacks.reset()
     this.ringAt.fill(-Infinity)
     this.streak.fill(0)
     this.mutedAt.fill(-Infinity)
@@ -320,6 +325,7 @@ export class AudioEngine {
     while (this.rmsHistory.length && this.rmsHistory[0].t < now - 0.3) this.rmsHistory.shift()
     const recentMin = Math.min(...this.rmsHistory.map((h) => h.v))
     if (gate && level > recentMin * 2 && now - this.lastOnsetAt > 0.25) this.lastOnsetAt = now
+    this.attacks.feed(this.timeData, this.ctx.sampleRate, now)
 
     const binHz = this.ctx.sampleRate / FFT_SIZE
     // Keyed by string count too: the same chord on another guitar is a different shape.
@@ -362,7 +368,7 @@ export class AudioEngine {
       if (gate) ({ match, rival } = chordFit(this.freqData, binHz, chord, CHORDS))
     }
 
-    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt, notes, muted }
+    return { level, gate, strings, scores, match, rival, lastOnsetAt: this.lastOnsetAt, lastAttackAt: this.attacks.lastAt, notes, muted }
   }
 }
 
