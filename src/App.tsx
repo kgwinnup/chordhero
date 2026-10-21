@@ -317,7 +317,7 @@ export default function App() {
           <span className="logo" aria-hidden>
             ⚡
           </span>
-          ChordHero
+          <span className="brand-word">ChordHero</span>
         </h1>
         {screen === 'play' && lesson && (
           <div className="lesson-banner">
@@ -383,6 +383,7 @@ export default function App() {
             <button
               className="ghost mic-on"
               title="Turn the microphone off"
+              aria-label="Microphone on: turn it off"
               onClick={() => {
                 stop()
                 engine.disableMic()
@@ -390,11 +391,12 @@ export default function App() {
                 setMic('off')
               }}
             >
-              <span className="live-dot" aria-hidden /> Mic
+              <span className="live-dot" aria-hidden /> <span className="mic-word">Mic</span>
             </button>
           ) : (
-            <button className="primary" onClick={() => enableMic()} disabled={running}>
-              🎤 <span className="wide-only">{settings.testMode ? 'Use ' : 'Enable '}</span>mic
+            <button className="primary" aria-label={settings.testMode ? 'Use the microphone' : 'Enable the microphone'} onClick={() => enableMic()} disabled={running}>
+              🎤 <span className="wide-only">{settings.testMode ? 'Use ' : 'Enable '}</span>
+              <span className="mic-word">mic</span>
             </button>
           )}
           <nav className="screens" aria-label="Screens">

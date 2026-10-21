@@ -1112,22 +1112,28 @@ h3 {
     padding: 10px 12px calc(28px + env(safe-area-inset-bottom));
     gap: 10px;
   }
+  /* Logo and buttons share the first row; the song picker or lesson gets the second. */
   .topbar {
-    row-gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
   }
   .topbar h1 {
-    font-size: 23px;
+    font-size: 21px;
     white-space: nowrap;
+    min-width: 0;
   }
   .topbar .row {
     gap: 6px;
+    flex-wrap: nowrap;
   }
   .topbar .row button {
     padding: 6px 10px;
   }
-  .preset-picker {
-    order: 3;
-    flex-basis: 100%;
+  .preset-picker,
+  .lesson-banner {
+    grid-column: 1 / -1;
+    grid-row: 2;
     max-width: none;
   }
   .hud {
@@ -1825,11 +1831,6 @@ h3 {
 }
 
 @media (max-width: 640px) {
-  .lesson-banner {
-    order: 3;
-    flex-basis: 100%;
-    max-width: none;
-  }
   .learn-up-title {
     font-size: 22px;
   }
@@ -1920,6 +1921,18 @@ h3 {
   width: 13px;
   height: 16px;
   vertical-align: -2px;
+}
+
+/* Narrow phones: the mic button shows just its icon, and the narrowest just the logo's bolt. */
+@media (max-width: 420px) {
+  .mic-word {
+    display: none;
+  }
+}
+@media (max-width: 340px) {
+  .brand-word {
+    display: none;
+  }
 }
 
 /* Strumming patterns */
