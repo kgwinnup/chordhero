@@ -19,7 +19,12 @@ import {
   stepGoal,
   stepTitle,
   type StrumStep,
+  ALL_STEPS,
+  LEAD_PATH,
+  LEAD_STEPS,
+  pathOf,
 } from '../learn/path'
+import { JamLesson, RunDrill, ScaleLesson } from './Lead'
 import { gradeStrums, parsePattern, SLOT_COUNTS, type SlotGrade, SLOTS, type Stroke, STRUM_BARS, strumScore } from '../learn/strum'
 import { Neck } from './Neck'
 
@@ -43,7 +48,7 @@ interface Props {
 export function Learn(props: Props) {
   const { progress, onChord } = props
   const [openId, setOpenId] = useState<string | null>(null)
-  const step = STEPS.find((s) => s.id === openId) ?? null
+  const step = ALL_STEPS.find((s) => s.id === openId) ?? null
 
   useEffect(() => () => onChord(null), [onChord])
 
@@ -53,9 +58,9 @@ export function Learn(props: Props) {
   }
   const finish = (id: string) => {
     props.onDone(id)
-    // Straight on to the next step, unless it's a song (that's its own screen).
-    const i = STEPS.findIndex((s) => s.id === id)
-    const after = STEPS[i + 1]
+    // Straight on to the next step of the same path, unless it's a song (that's its own screen).
+    const steps = pathOf(id)
+    const after = steps[steps.findIndex((s) => s.id === id) + 1]
     if (after && after.kind !== 'song') setOpenId(after.id)
     else setOpenId(null)
   }
@@ -67,9 +72,50 @@ export function Learn(props: Props) {
   if (step?.kind === 'shape') return <ShapeLesson key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
   if (step?.kind === 'changes') return <ChangesDrill key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
   if (step?.kind === 'strum') return <StrumDrill key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
+  if (step?.kind === 'scale') return <ScaleLesson key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
+  if (step?.kind === 'run') return <RunDrill key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
+  if (step?.kind === 'jam') return <JamLesson key={step.id} {...props} step={step} onBack={back} onFinish={() => finish(step.id)} />
 
   const up = nextStep(progress)
-  const doneCount = progress.done.length
+  const doneCount = STEPS.filter((s) => progress.done.includes(s.id)).length
+  const leadUp = LEAD_STEPS.find((s) => !progress.done.includes(s.id))
+  const units = (path: typeof PATH, current: Step | null | undefined) => (
+    <ol className="units">
+      {path.map((unit, u) => (
+        <li key={unit.title} className="unit panel">
+          <div className="unit-head">
+            <span className="unit-num">{u + 1}</span>
+            <div>
+              <h3>{unit.title}</h3>
+              <p>{unit.blurb}</p>
+            </div>
+          </div>
+          <ul className="steps">
+            {unit.steps.map((s) => {
+              const done = progress.done.includes(s.id)
+              const unlocked = isUnlocked(progress, s.id)
+              const now = current?.id === s.id
+              const best = progress.best[s.id]
+              return (
+                <li key={s.id}>
+                  <button className={`step ${done ? 'done' : now ? 'current' : unlocked ? '' : 'locked'}`} disabled={!done && !unlocked} onClick={() => open(s)}>
+                    <span className="step-mark" aria-hidden>
+                      {done ? '✓' : now ? '▶' : unlocked ? '•' : '🔒'}
+                    </span>
+                    <span className="step-title">{stepTitle(s)}</span>
+                    <span className="step-goal">
+                      {stepGoal(s)}
+                      {best ? ` · best ${best}${s.kind === 'strum' ? '%' : s.kind === 'run' ? ' BPM' : ''}` : ''}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </li>
+      ))}
+    </ol>
+  )
   return (
     <section className="learn">
       <div className="learn-head">
@@ -97,41 +143,13 @@ export function Learn(props: Props) {
         </div>
       )}
 
-      <ol className="units">
-        {PATH.map((unit, u) => (
-          <li key={unit.title} className="unit panel">
-            <div className="unit-head">
-              <span className="unit-num">{u + 1}</span>
-              <div>
-                <h3>{unit.title}</h3>
-                <p>{unit.blurb}</p>
-              </div>
-            </div>
-            <ul className="steps">
-              {unit.steps.map((s) => {
-                const done = progress.done.includes(s.id)
-                const unlocked = isUnlocked(progress, s.id)
-                const current = up?.id === s.id
-                const best = progress.best[s.id]
-                return (
-                  <li key={s.id}>
-                    <button className={`step ${done ? 'done' : current ? 'current' : unlocked ? '' : 'locked'}`} disabled={!done && !unlocked} onClick={() => open(s)}>
-                      <span className="step-mark" aria-hidden>
-                        {done ? '✓' : current ? '▶' : unlocked ? '•' : '🔒'}
-                      </span>
-                      <span className="step-title">{stepTitle(s)}</span>
-                      <span className="step-goal">
-                        {stepGoal(s)}
-                        {best ? ` · best ${best}${s.kind === 'strum' ? '%' : ''}` : ''}
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </li>
-        ))}
-      </ol>
+      {units(PATH, up)}
+
+      <div className="learn-head lead-head">
+        <h2>Lead guitar</h2>
+        <span className="learn-count">Scales, open any time</span>
+      </div>
+      {units(LEAD_PATH, leadUp)}
 
       {doneCount > 0 && (
         <button
@@ -252,12 +270,12 @@ function useHear(engine: AudioEngine, demo: boolean) {
   return { ignoreBefore, hear, pluck, quiet }
 }
 
-interface LessonProps extends Props {
+export interface LessonProps extends Props {
   onBack: () => void
   onFinish: () => void
 }
 
-function LessonHead({ title, goal, onBack, children }: { title: string; goal: string; onBack: () => void; children?: React.ReactNode }) {
+export function LessonHead({ title, goal, onBack, children }: { title: string; goal: string; onBack: () => void; children?: React.ReactNode }) {
   return (
     <div className="lesson-head">
       <button className="ghost" onClick={onBack}>
@@ -272,7 +290,7 @@ function LessonHead({ title, goal, onBack, children }: { title: string; goal: st
   )
 }
 
-function HintBubble({ hint, idle }: { hint: Hint | null; idle: string }) {
+export function HintBubble({ hint, idle }: { hint: Hint | null; idle: string }) {
   return (
     <p className={`coach ${hint ? `coach-${hint.tone}` : ''}`} aria-live="polite" key={hint?.text}>
       <span className="coach-icon" aria-hidden>
@@ -535,11 +553,11 @@ function ChangesDrill({ engine, view, step, demo, sensitivity, progress, onChord
 }
 
 /** Mic input reaches the analyser about this long after the strum. */
-const MIC_LATENCY = 0.03
+export const MIC_LATENCY = 0.03
 /** A strum counts once the chord is heard ringing within this long of it: a click or a tap isn't a strum. */
 const CONFIRM_SECONDS = 0.25
 /** Clicks and demo strums are scheduled this far ahead, in seconds. */
-const LOOKAHEAD = 0.25
+export const LOOKAHEAD = 0.25
 
 function PatternRow({ pattern, grades, current }: { pattern: Stroke[]; grades?: SlotGrade[]; current?: number }) {
   return (

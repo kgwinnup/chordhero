@@ -269,7 +269,8 @@ export function useGame(
 
       if (v.phase === 'idle' || v.phase === 'done') {
         // Free play: light up strings for the chord being previewed.
-        analysisChord = (previewRef.current && CHORDS_BY_ID[previewRef.current]) || lay.items[0]?.chord || null
+        // No preview shows the song's first chord; an empty one (a scale lesson) shows none.
+        analysisChord = previewRef.current === null ? (lay.items[0]?.chord ?? null) : (CHORDS_BY_ID[previewRef.current] ?? null)
         next = lay.items[1]?.chord ?? null
       } else {
         const bps = s.bpm / 60

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { CHORDS_BY_ID } from '../music/chords'
-import { emptyProgress, isUnlocked, loadProgress, markDone, nextStep, PATH, recordBest, saveProgress, STEPS } from './path'
+import { emptyProgress, isUnlocked, LEAD_STEPS, loadProgress, markDone, nextStep, PATH, recordBest, saveProgress, type Step, STEPS } from './path'
+
+const chordsOf = (s: Step): string[] => ('chords' in s ? s.chords : 'chord' in s ? [s.chord] : [])
 
 describe('the beginner path', () => {
   it('uses only real chords and unique step ids', () => {
-    const chords = STEPS.flatMap((s) => (s.kind === 'shape' || s.kind === 'strum' ? [s.chord] : s.chords))
+    const chords = [...STEPS, ...LEAD_STEPS].flatMap(chordsOf)
     for (const id of chords) expect(CHORDS_BY_ID[id], id).toBeDefined()
     expect(new Set(STEPS.map((s) => s.id)).size).toBe(STEPS.length)
   })
@@ -13,7 +15,7 @@ describe('the beginner path', () => {
     const learned = new Set<string>()
     for (const s of STEPS) {
       if (s.kind === 'shape') learned.add(s.chord)
-      else for (const c of s.kind === 'strum' ? [s.chord] : s.chords) expect(learned.has(c), `${s.id} uses ${c} before it's taught`).toBe(true)
+      else for (const c of chordsOf(s)) expect(learned.has(c), `${s.id} uses ${c} before it's taught`).toBe(true)
     }
   })
 
@@ -43,6 +45,14 @@ describe('the beginner path', () => {
     expect(isUnlocked(p, STEPS[i].id)).toBe(true)
     expect(isUnlocked(p, STEPS[i + 1].id)).toBe(true)
     expect(nextStep(p)?.id).toBe(STEPS[i].id)
+  })
+
+  it('opens the lead path from the start, in its own order', () => {
+    const p = emptyProgress()
+    expect(isUnlocked(p, LEAD_STEPS[0].id)).toBe(true)
+    expect(isUnlocked(p, LEAD_STEPS[1].id)).toBe(false)
+    expect(isUnlocked(markDone(p, LEAD_STEPS[0].id), LEAD_STEPS[1].id)).toBe(true)
+    expect(nextStep(markDone(p, LEAD_STEPS[0].id))?.id).toBe(STEPS[0].id)
   })
 
   it('keeps the best drill score', () => {

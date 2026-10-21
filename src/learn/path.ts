@@ -1,4 +1,5 @@
 import { CHORDS_BY_ID } from '../music/chords'
+import { SCALES } from './scale'
 
 /** Learn a chord's shape: strum it cleanly a few times with the coach listening. */
 export interface ShapeStep {
@@ -40,7 +41,38 @@ export interface StrumStep {
   goal: number
 }
 
-export type Step = ShapeStep | ChangesStep | SongStep | StrumStep
+/** Learn a scale's shape: play each note, up and back down, at your own pace. */
+export interface ScaleStep {
+  id: string
+  kind: 'scale'
+  scale: string
+}
+
+/** Play a scale up and down in time with the click. */
+export interface RunStep {
+  id: string
+  kind: 'run'
+  scale: string
+  bpm: number
+  /** Notes per beat: 1 quarter notes, 2 eighths */
+  perBeat: number
+  /** Percent right and in time to pass */
+  goal: number
+}
+
+/** Improvise with a scale over a backing loop: any note of the scale scores. */
+export interface JamStep {
+  id: string
+  kind: 'jam'
+  scale: string
+  chords: string[]
+  bpm: number
+  bars: number
+  /** Notes in key to pass */
+  goal: number
+}
+
+export type Step = ShapeStep | ChangesStep | SongStep | StrumStep | ScaleStep | RunStep | JamStep
 
 export interface Unit {
   title: string
@@ -108,10 +140,33 @@ export const PATH: Unit[] = [
 
 export const STEPS: Step[] = PATH.flatMap((u) => u.steps)
 
+/** The lead guitar path: scales, learned like chords (shape, drill, then play), open from the start. */
+export const LEAD_PATH: Unit[] = [
+  {
+    title: 'E minor pentatonic',
+    blurb: 'The five-note scale behind most rock and blues solos, in open position.',
+    steps: [
+      { id: 'scale-em-pent', kind: 'scale', scale: 'em-pent' },
+      { id: 'run-em-pent-60', kind: 'run', scale: 'em-pent', bpm: 60, perBeat: 1, goal: 80 },
+      { id: 'run-em-pent-eighths', kind: 'run', scale: 'em-pent', bpm: 60, perBeat: 2, goal: 80 },
+      { id: 'jam-em-pent', kind: 'jam', scale: 'em-pent', chords: ['Em', 'C', 'G', 'D'], bpm: 70, bars: 8, goal: 24 },
+    ],
+  },
+]
+
+export const LEAD_STEPS: Step[] = LEAD_PATH.flatMap((u) => u.steps)
+export const ALL_STEPS: Step[] = [...STEPS, ...LEAD_STEPS]
+
+/** The path a step belongs to. */
+export const pathOf = (id: string): Step[] => (LEAD_STEPS.some((s) => s.id === id) ? LEAD_STEPS : STEPS)
+
 export function stepTitle(step: Step) {
   if (step.kind === 'shape') return `Learn ${CHORDS_BY_ID[step.chord].name}`
   if (step.kind === 'changes') return `${step.chords.join(' ↔ ')} changes`
   if (step.kind === 'strum') return `Strum: ${step.name}`
+  if (step.kind === 'scale') return `Learn ${SCALES[step.scale].name}`
+  if (step.kind === 'run') return step.perBeat === 1 ? 'Up and down, in time' : 'Up and down in eighth notes'
+  if (step.kind === 'jam') return `Jam over ${step.chords.join(' – ')}`
   return `Play “${step.name}”`
 }
 
@@ -119,6 +174,9 @@ export function stepGoal(step: Step) {
   if (step.kind === 'shape') return `${SHAPE_GOAL} clean strums`
   if (step.kind === 'changes') return `${step.goal} changes in a minute`
   if (step.kind === 'strum') return `${step.goal}% in time at ${step.bpm} BPM`
+  if (step.kind === 'scale') return 'Every note, up and back down'
+  if (step.kind === 'run') return `${step.goal}% at ${step.bpm} BPM`
+  if (step.kind === 'jam') return `${step.goal} notes in key`
   return `${step.stars}★ at ${step.bpm} BPM`
 }
 
@@ -137,7 +195,7 @@ export function loadProgress(): Progress {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Progress> | null
     if (!raw) return emptyProgress()
-    const ids = new Set(STEPS.map((s) => s.id))
+    const ids = new Set(ALL_STEPS.map((s) => s.id))
     return {
       done: Array.isArray(raw.done) ? raw.done.filter((id) => ids.has(id)) : [],
       best: raw.best && typeof raw.best === 'object' ? raw.best : {},
@@ -171,6 +229,7 @@ export const nextStep = (p: Progress): Step | null => STEPS.find((s) => !p.done.
  * they came later, and progress made before them shouldn't lock again.
  */
 export function isUnlocked(p: Progress, id: string) {
-  const i = STEPS.findIndex((s) => s.id === id)
-  return i >= 0 && STEPS.slice(0, i).every((s) => s.kind === 'strum' || p.done.includes(s.id))
+  const steps = pathOf(id)
+  const i = steps.findIndex((s) => s.id === id)
+  return i >= 0 && steps.slice(0, i).every((s) => s.kind === 'strum' || p.done.includes(s.id))
 }

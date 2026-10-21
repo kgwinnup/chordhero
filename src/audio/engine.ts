@@ -218,6 +218,13 @@ export class AudioEngine {
 
 
 
+  /** A copy of the spectrum right now, in dB per bin, and the width of a bin in Hz. */
+  spectrum(): { db: Float32Array; binHz: number } {
+    const db = new Float32Array(this.analyser.frequencyBinCount)
+    this.analyser.getFloatFrequencyData(db)
+    return { db, binHz: this.ctx.sampleRate / FFT_SIZE }
+  }
+
   disableMic() {
     this.micSource?.disconnect()
     this.micStream?.getTracks().forEach((t) => t.stop())

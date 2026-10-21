@@ -4,10 +4,21 @@ import type { Grade } from '../game/scoring'
 import type { Tone } from '../game/strumLight'
 import { type Chord, guitar, STRING_NAMES } from '../music/chords'
 
+/** A note to show on the neck, for scales: a dot at a string and fret, coloured by how it's going. */
+export interface NeckMark {
+  string: number
+  fret: number
+  label: string
+  /** The scale's root: ringed */
+  root?: boolean
+  state: 'idle' | 'target' | 'hit' | 'wrong'
+}
+
 interface Props {
   layout: Layout
   view: React.RefObject<GameView>
   loop: boolean
+  marks?: NeckMark[]
 }
 
 interface Particle {
@@ -66,11 +77,11 @@ const INLAYS = [3, 5, 7, 9]
  * The play area: a strip of chord cards sliding toward "now" on top, and a detailed
  * guitar neck below showing where your fingers go and which strings are ringing.
  */
-export function Neck({ layout, view, loop }: Props) {
+export function Neck({ layout, view, loop, marks }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const propsRef = useRef({ layout, loop })
+  const propsRef = useRef({ layout, loop, marks })
   useLayoutEffect(() => {
-    propsRef.current = { layout, loop }
+    propsRef.current = { layout, loop, marks }
   })
 
   useEffect(() => {
@@ -92,6 +103,8 @@ export function Neck({ layout, view, loop }: Props) {
     let stillKey = ''
     let lastLayout: Layout | null = null
     let layoutVersion = 0
+    /** Each mark's last state, to burst when one turns green. */
+    const markStates = new Map<string, NeckMark['state']>()
     // The theme's colors never change, so read each once rather than restyling every frame.
     const colors = new Map<string, string>()
     let css: CSSStyleDeclaration | null = null
@@ -118,7 +131,8 @@ export function Neck({ layout, view, loop }: Props) {
         canvas.width = Math.round(w * dpr)
         canvas.height = Math.round(h * dpr)
       }
-      const { layout: lay, loop: looping } = propsRef.current
+      const { layout: lay, loop: looping, marks: shownMarks } = propsRef.current
+      const marksKey = shownMarks?.map((m) => `${m.string}.${m.fret}.${m.state}`).join() ?? ''
       const v = view.current
       const playing = v.phase === 'playing' || v.phase === 'countin'
 
@@ -127,8 +141,8 @@ export function Neck({ layout, view, loop }: Props) {
         lastLayout = lay
         layoutVersion++
       }
-      const moving = playing || beatFlash > 0 || flash > 0 || shake > 0 || rings.length > 0 || particles.length > 0 || v.ringing.some(Boolean) || v.light.mutedHit.some(Boolean) || (!!v.lastJudgment && v.lastJudgment.id !== seenJudgment)
-      const key = moving ? '' : [canvas.width, canvas.height, guitar.id, layoutVersion, looping, v.pos, v.display?.id, v.display?.frets.join(), v.tone, woodKey].join('|')
+      const moving = playing || !!shownMarks?.some((m) => m.state === 'target') || beatFlash > 0 || flash > 0 || shake > 0 || rings.length > 0 || particles.length > 0 || v.ringing.some(Boolean) || v.light.mutedHit.some(Boolean) || (!!v.lastJudgment && v.lastJudgment.id !== seenJudgment)
+      const key = moving ? '' : [canvas.width, canvas.height, guitar.id, layoutVersion, looping, v.pos, v.display?.id, v.display?.frets.join(), v.tone, woodKey, marksKey].join('|')
       if (key && key === stillKey) return
       stillKey = key
       const g = geometry(w, h)
@@ -234,6 +248,23 @@ export function Neck({ layout, view, loop }: Props) {
       if (chord) drawShape(ctx, g, chord, v.ringing, lit, 1, false, color)
       drawMarkers(ctx, g, chord, v.ringing, lit, color)
       if (chord && v.tone === 'wrong') drawWrong(ctx, g, chord, color)
+      if (shownMarks) {
+        for (const m of shownMarks) {
+          const id = `${m.string}.${m.fret}`
+          if (m.state === 'hit' && markStates.get(id) !== 'hit') {
+            const p = markPoint(g, m)
+            const c = color('--great')
+            rings.push({ x: p.x, y: p.y, life: 0, color: c })
+            for (let i = 0; i < 8; i++) {
+              const a = Math.random() * Math.PI * 2
+              const speed = 40 + Math.random() * 150
+              particles.push({ x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 60, life: 0, max: 0.3 + Math.random() * 0.4, size: 1 + Math.random() * 2, color: c })
+            }
+          }
+          markStates.set(id, m.state)
+        }
+        drawMarks(ctx, g, shownMarks, t, color)
+      }
 
       rings = rings.filter((r) => (r.life += dt) < 0.4)
       for (const r of rings) {
@@ -735,6 +766,38 @@ function drawShape(
 }
 
 /** Open (○) and muted (✕) markers left of the nut. */
+const markPoint = (g: Geo, m: NeckMark) => ({ x: m.fret > 0 ? fingerX(g, m.fret) : g.markerX, y: g.stringY(m.string) })
+
+/** Scale notes: dim dots to show the shape, the one to play now glowing, played ones green. */
+function drawMarks(ctx: CanvasRenderingContext2D, g: Geo, marks: NeckMark[], t: number, color: (n: string) => string) {
+  const r = dotRadius(g)
+  const pulse = 0.5 + 0.5 * Math.sin(t / 160)
+  for (const m of marks) {
+    const { x, y } = markPoint(g, m)
+    const fill = m.state === 'target' ? color('--accent-3') : m.state === 'hit' ? color('--great') : m.state === 'wrong' ? color('--miss') : '#26262c'
+    ctx.save()
+    if (m.state === 'target') {
+      ctx.shadowColor = fill
+      ctx.shadowBlur = 10 + pulse * 14
+    }
+    ctx.fillStyle = fill
+    ctx.globalAlpha = m.state === 'idle' ? 0.85 : 1
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.shadowBlur = 0
+    ctx.lineWidth = m.root ? 3 : 1.5
+    ctx.strokeStyle = m.root ? color('--accent') : m.state === 'idle' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'
+    ctx.stroke()
+    ctx.fillStyle = m.state === 'idle' ? color('--text') : '#140c00'
+    ctx.font = `700 ${Math.round(r * 1.05)}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(m.label, x, y + 1)
+    ctx.restore()
+  }
+}
+
 function drawMarkers(ctx: CanvasRenderingContext2D, g: Geo, chord: Chord | null, ringing: boolean[], lit: Lit, color: (n: string) => string) {
   if (!chord) return
   const r = Math.min(g.gap * 0.28, 9)
