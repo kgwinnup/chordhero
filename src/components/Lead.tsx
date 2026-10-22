@@ -6,9 +6,13 @@ import { type Hint, SPOKEN_STRING } from '../learn/coach'
 import type { JamStep, RunStep, ScaleStep } from '../learn/path'
 import { stepTitle } from '../learn/path'
 import { gradeNotes, type HeardNote, inScale, newNoteScores, noteName, type Pick, playedNotes, runScore, SCALES, type ScaleNote, scaleNotes, upAndDown } from '../learn/scale'
-import { HintBubble, LessonHead, type LessonProps, LOOKAHEAD, MIC_LATENCY } from './Learn'
+import { HintBubble, LessonHead, type LessonProps } from './Learn'
 import { Neck, type NeckMark } from './Neck'
 
+/** Mic input reaches the analyser about this long after the pick. */
+const MIC_LATENCY = 0.03
+/** Clicks, the band and demo notes are scheduled this far ahead, in seconds. */
+const LOOKAHEAD = 0.25
 /** Compare the spectrum this long after a pick with the one just before it. */
 const LISTEN_AFTER = 0.2
 /** Keep a spectrum about this often, in ms. */

@@ -38,15 +38,6 @@ describe('the beginner path', () => {
     expect(nextStep(p)).toBeNull()
   })
 
-  it("doesn't let a strumming step lock the steps after it", () => {
-    const i = STEPS.findIndex((s) => s.kind === 'strum')
-    let p = emptyProgress()
-    for (const s of STEPS.slice(0, i)) p = markDone(p, s.id)
-    expect(isUnlocked(p, STEPS[i].id)).toBe(true)
-    expect(isUnlocked(p, STEPS[i + 1].id)).toBe(true)
-    expect(nextStep(p)?.id).toBe(STEPS[i].id)
-  })
-
   it('opens the lead path from the start, in its own order', () => {
     const p = emptyProgress()
     expect(isUnlocked(p, LEAD_STEPS[0].id)).toBe(true)
