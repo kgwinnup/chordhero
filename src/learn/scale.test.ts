@@ -13,12 +13,19 @@ describe('E minor pentatonic', () => {
     expect(notes.filter((n) => n.root).map((n) => n.midi)).toEqual([40, 52, 64])
   })
 
+  it('lays out A minor pentatonic in open position too', () => {
+    const notes = scaleNotes(SCALES['am-pent'], six)
+    expect(notes.map((n) => `${n.string}:${n.fret}`)).toEqual(['0:0', '0:3', '1:0', '1:3', '2:0', '2:2', '3:0', '3:2', '4:1', '4:3', '5:0', '5:3'])
+    expect(notes.map((n) => noteName(n.midi)).join(' ')).toBe('E G A C D E G A C D E G')
+    expect(notes.filter((n) => n.root).map((n) => n.midi)).toEqual([45, 57])
+  })
+
   it('finds only scale notes on every guitar, with no note twice', () => {
-    for (const g of GUITARS) {
-      const notes = scaleNotes(em, g.open)
+    for (const g of GUITARS) for (const scale of Object.values(SCALES)) {
+      const notes = scaleNotes(scale, g.open)
       expect(notes.length).toBeGreaterThan(4)
       expect(new Set(notes.map((n) => n.midi)).size).toBe(notes.length)
-      for (const n of notes) expect(inScale(em, n.midi)).toBe(true)
+      for (const n of notes) expect(inScale(scale, n.midi)).toBe(true)
     }
   })
 
@@ -83,6 +90,12 @@ describe('hearing the note a pick added', () => {
     expect(heard([], [{ midi: 52, gain: 0.03 }])[0]).toBe(52)
     // A low E through a small mic: its fundamental barely there.
     expect(heard([], [{ midi: 40, gain: 0.03, amps: [0.25, 1, 0.8, 0.6, 0.5, 0.4, 0.3, 0.2] }])).toContain(40)
+  })
+
+  it("doesn't take a note for the one a fifth below, whose 3rd harmonic it is", () => {
+    // F2 has C4 as its 3rd harmonic, but nothing at F2 or F3. (The octave below may still be
+    // heard, sharing every other harmonic: the same note name, which is what a jam judges by.)
+    for (const midi of [60, 55, 48]) expect(noteName(Math.min(...heard([], [{ midi, gain: 0.03 }])))).toBe(noteName(midi))
   })
 
   it('hears nothing when nothing new sounded', () => {

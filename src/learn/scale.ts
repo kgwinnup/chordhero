@@ -10,6 +10,7 @@ export interface Scale {
 
 export const SCALES: Record<string, Scale> = {
   'em-pent': { id: 'em-pent', name: 'E minor pentatonic', root: 4, intervals: [0, 3, 5, 7, 10] },
+  'am-pent': { id: 'am-pent', name: 'A minor pentatonic', root: 9, intervals: [0, 3, 5, 7, 10] },
 }
 
 /** Where a note of the scale is played. */
@@ -50,6 +51,11 @@ export const upAndDown = <T,>(notes: T[]): T[] => [...notes, ...notes.slice(0, -
 const HARMONIC_WEIGHTS = [1, 0.85, 0.7, 0.55, 0.45, 0.35]
 /** A harmonic is looked for within this many semitones of where it should be. */
 const HARMONIC_SPAN = 0.3
+/**
+ * A real note sounds at its first or second harmonic: at least this share of its strongest. A note a
+ * fifth below the one played picks up its 3rd harmonic but has nothing there, so it scores nothing.
+ */
+const LOW_HARMONIC_SHARE = 0.1
 
 /**
  * How strongly each note sounds in what a pick added: the spectrum after it, less the spectrum
@@ -62,16 +68,16 @@ export function newNoteScores(before: ArrayLike<number>, after: ArrayLike<number
   const added = (bin: number) => Math.max(0, 10 ** (after[bin] / 10) - 10 ** (before[bin] / 10))
   return midis.map((midi) => {
     const f0 = 440 * 2 ** ((midi - 69) / 12)
-    let score = 0
-    HARMONIC_WEIGHTS.forEach((w, h) => {
+    const peaks = HARMONIC_WEIGHTS.map((_, h) => {
       const f = f0 * (h + 1)
       const lo = Math.max(1, Math.floor((f * 2 ** (-HARMONIC_SPAN / 12)) / binHz))
       const hi = Math.min(after.length - 1, Math.ceil((f * 2 ** (HARMONIC_SPAN / 12)) / binHz))
       let peak = 0
       for (let b = lo; b <= hi; b++) peak = Math.max(peak, added(b))
-      score += w * peak
+      return peak
     })
-    return score
+    if (Math.max(peaks[0], peaks[1]) < LOW_HARMONIC_SHARE * Math.max(...peaks)) return 0
+    return peaks.reduce((sum, p, h) => sum + HARMONIC_WEIGHTS[h] * p, 0)
   })
 }
 

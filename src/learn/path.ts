@@ -152,6 +152,16 @@ export const LEAD_PATH: Unit[] = [
       { id: 'jam-em-pent', kind: 'jam', scale: 'em-pent', chords: ['Em', 'C', 'G', 'D'], bpm: 70, bars: 8, goal: 24 },
     ],
   },
+  {
+    title: 'A minor pentatonic',
+    blurb: 'The same five-note sound from A, still in open position: the key of countless rock solos.',
+    steps: [
+      { id: 'scale-am-pent', kind: 'scale', scale: 'am-pent' },
+      { id: 'run-am-pent-60', kind: 'run', scale: 'am-pent', bpm: 60, perBeat: 1, goal: 80 },
+      { id: 'run-am-pent-eighths', kind: 'run', scale: 'am-pent', bpm: 60, perBeat: 2, goal: 80 },
+      { id: 'jam-am-pent', kind: 'jam', scale: 'am-pent', chords: ['Am', 'F', 'C', 'G'], bpm: 70, bars: 8, goal: 24 },
+    ],
+  },
 ]
 
 export const LEAD_STEPS: Step[] = LEAD_PATH.flatMap((u) => u.steps)

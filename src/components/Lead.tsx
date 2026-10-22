@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/engine'
-import { CHORDS_BY_ID, guitar } from '../music/chords'
+import { CHORDS_BY_ID, guitar, NOTE_NAMES } from '../music/chords'
 import { buildLayout, type GameView } from '../game/useGame'
 import { type Hint, SPOKEN_STRING } from '../learn/coach'
 import type { JamStep, RunStep, ScaleStep } from '../learn/path'
@@ -139,7 +139,7 @@ export function ScaleLesson({ engine, view, step, demo, onChord, onBack, onFinis
           <div className="lesson-pass">
             <h3>You played the whole scale! 🤘</h3>
             <p>
-              Up and back down, every note of {scale.name}. The ringed notes are E, the root: solos love to start and end there. Next, play it in time with the
+              Up and back down, every note of {scale.name}. The ringed notes are {NOTE_NAMES[scale.root]}, the root: solos love to start and end there. Next, play it in time with the
               click.
             </p>
             <button className="primary big" onClick={onFinish}>
@@ -469,7 +469,7 @@ export function JamLesson({ engine, view, step, demo, progress, onChord, onBest,
           <div className="drill-intro">
             <p>
               The band plays {step.chords.join(' – ')} for {step.bars} bars. Make up your own melody from the dots: every note of {scale.name} sounds good over it.
-              Notes in a row build your multiplier; one off the scale resets it. Try ending on a ringed E. Headphones help, so the band isn't heard as you.
+              Notes in a row build your multiplier; one off the scale resets it. Try ending on a ringed {NOTE_NAMES[scale.root]}. Headphones help, so the band isn't heard as you.
             </p>
             <div className="row lesson-actions">
               <button className="primary big" onClick={begin}>
