@@ -143,6 +143,11 @@ export function eventAt(layout: Layout, beat: number, loop: boolean): ChordEvent
   return eventByAbs(layout, cycle * n + Math.max(0, index), loop)
 }
 
+/** The chord shown in free play: no preview shows the song's first chord; an empty one (a scale lesson) shows none. */
+function previewChord(previewId: string | null, layout: Layout): Chord | null {
+  return previewId === null ? (layout.items[0]?.chord ?? null) : (CHORDS_BY_ID[previewId] ?? null)
+}
+
 export function useGame(
   engine: AudioEngine | null,
   seq: SeqItem[],
@@ -226,7 +231,11 @@ export function useGame(
       const live = v.phase === 'playing' || v.phase === 'countin'
       // Save power: at most 60 frames a second (120 Hz screens gain nothing for audio), only a few
       // while idle and quiet, and none while the audio is asleep with no song to run.
-      if (!live && !engine.awake) return
+      if (!live && !engine.awake) {
+        // Still show the previewed chord's shape, so a lesson's neck isn't blank until a sound.
+        if (v.phase === 'idle' || v.phase === 'done') v.display = previewChord(previewRef.current, layoutRef.current)
+        return
+      }
       const quiet = !live && !v.light.tone && !v.ringing.some(Boolean)
       if (t - lastFrame < (quiet ? IDLE_FRAME_MS : MIN_FRAME_MS)) return
       lastFrame = t
@@ -269,8 +278,7 @@ export function useGame(
 
       if (v.phase === 'idle' || v.phase === 'done') {
         // Free play: light up strings for the chord being previewed.
-        // No preview shows the song's first chord; an empty one (a scale lesson) shows none.
-        analysisChord = previewRef.current === null ? (lay.items[0]?.chord ?? null) : (CHORDS_BY_ID[previewRef.current] ?? null)
+        analysisChord = previewChord(previewRef.current, lay)
         next = lay.items[1]?.chord ?? null
       } else {
         const bps = s.bpm / 60
