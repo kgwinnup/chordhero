@@ -22,6 +22,7 @@ import {
   LEAD_PATH,
   LEAD_STEPS,
   pathOf,
+  learnedChords,
 } from '../learn/path'
 import { JamLesson, RunDrill, ScaleLesson } from './Lead'
 import { Neck } from './Neck'
@@ -135,7 +136,7 @@ export function Learn(props: Props) {
       ) : (
         <div className="learn-up finished">
           <span className="learn-up-kicker">Path complete</span>
-          <span className="learn-up-title">You know the 7 beginner chords 🤘</span>
+          <span className="learn-up-title">You know all {learnedChords(progress).length} chords on the path 🤘</span>
           <span className="learn-up-goal">Keep drilling changes, or build your own songs on the Play screen.</span>
         </div>
       )}

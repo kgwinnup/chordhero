@@ -78,7 +78,9 @@ const song = (id: string, name: string, chords: string[], bpm: number, stars = 3
 /**
  * The beginner path, in the order most teachers use: two-finger E minor first, then shapes that
  * reuse it (Am and E are the same shape moved), then A, D, G and C. Each chord is learned on its
- * own, then switched to and from a chord you already know, then played in a song.
+ * own, then switched to and from a chord you already know, then played in a song. After the seven
+ * beginner chords: Dm, the sevenths (mostly one finger from shapes you know), and the first barre
+ * chords, F (reached through Fmaj7, which needs no barre) and Bm.
  */
 export const PATH: Unit[] = [
   {
@@ -121,6 +123,45 @@ export const PATH: Unit[] = [
       song('g-c-d', 'G – C – D', ['G', 'C', 'D', 'G', 'G', 'C', 'D', 'G'], 65),
       song('four-chords', 'Four-chord song', ['G', 'Em', 'C', 'D', 'G', 'Em', 'C', 'D'], 70),
     ],
+  },
+  {
+    title: 'D minor',
+    blurb: 'The last open minor chord: a small triangle on the top strings, like D with one finger moved.',
+    steps: [shape('Dm'), changes('Am', 'Dm', 15), song('am-dm-e', 'Am – Dm – E', ['Am', 'Dm', 'Am', 'E', 'Am', 'Dm', 'E', 'Am'], 65)],
+  },
+  {
+    title: 'Seventh chords',
+    blurb: 'Bluesy versions of chords you know, most by lifting or moving one finger.',
+    steps: [
+      shape('E7'),
+      shape('A7'),
+      changes('E7', 'A7', 15),
+      shape('D7'),
+      shape('G7'),
+      changes('G7', 'C', 15),
+      song('sevenths', 'C – A7 – D7 – G7', ['C', 'A7', 'D7', 'G7', 'C', 'A7', 'D7', 'G7'], 65),
+    ],
+  },
+  {
+    title: 'B7 and the blues',
+    blurb: 'Four fingers, and the chord that brings a blues home to E.',
+    steps: [shape('B7'), changes('E7', 'B7', 12), song('blues-e', 'Blues in E', ['E7', 'E7', 'A7', 'E7', 'B7', 'A7', 'E7', 'B7'], 70)],
+  },
+  {
+    title: 'F major',
+    blurb: 'Your first barre chord. Start with Fmaj7, which needs no barre, then lay your finger flat.',
+    steps: [
+      shape('Fmaj7'),
+      changes('C', 'Fmaj7', 15),
+      shape('F'),
+      changes('C', 'F', 12),
+      song('pop', 'C – G – Am – F', ['C', 'G', 'Am', 'F', 'C', 'G', 'Am', 'F'], 70),
+    ],
+  },
+  {
+    title: 'B minor',
+    blurb: 'A barre across five strings at the 2nd fret: the last chord of the path.',
+    steps: [shape('Bm'), changes('D', 'Bm', 12), song('d-a-bm-g', 'D – A – Bm – G', ['D', 'A', 'Bm', 'G', 'D', 'A', 'Bm', 'G'], 70)],
   },
 ]
 

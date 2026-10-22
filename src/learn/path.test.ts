@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CHORDS_BY_ID } from '../music/chords'
+import { CHORDS_BY_ID, PRESETS } from '../music/chords'
 import { emptyProgress, isUnlocked, LEAD_STEPS, loadProgress, markDone, nextStep, PATH, recordBest, saveProgress, type Step, STEPS } from './path'
 
 const chordsOf = (s: Step): string[] => ('chords' in s ? s.chords : 'chord' in s ? [s.chord] : [])
@@ -19,11 +19,16 @@ describe('the beginner path', () => {
     }
   })
 
-  it('starts with E minor and covers the seven beginner chords', () => {
+  it('starts with E minor and covers the seven beginner chords first', () => {
     expect(STEPS[0]).toMatchObject({ kind: 'shape', chord: 'Em' })
-    const shapes = STEPS.flatMap((s) => (s.kind === 'shape' ? [s.chord] : []))
-    expect(shapes.sort()).toEqual(['A', 'Am', 'C', 'D', 'E', 'Em', 'G'])
-    expect(PATH.length).toBe(7)
+    const shapes = (units: typeof PATH) => units.flatMap((u) => u.steps.flatMap((s) => (s.kind === 'shape' ? [s.chord] : [])))
+    expect(shapes(PATH.slice(0, 7)).sort()).toEqual(['A', 'Am', 'C', 'D', 'E', 'Em', 'G'])
+    expect(shapes(PATH.slice(7)).sort()).toEqual(['A7', 'B7', 'Bm', 'D7', 'Dm', 'E7', 'F', 'Fmaj7', 'G7'])
+  })
+
+  it('teaches every chord the built-in songs use', () => {
+    const taught = new Set(STEPS.flatMap((s) => (s.kind === 'shape' ? [s.chord] : [])))
+    for (const p of PRESETS) for (const c of p.chords) expect(taught.has(c), `${p.name} uses ${c}`).toBe(true)
   })
 
   it('unlocks steps in order', () => {
