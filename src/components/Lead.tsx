@@ -463,8 +463,9 @@ export function JamLesson({ engine, view, step, demo, progress, onChord, onBest,
           <div className="drill-hud" aria-live="off">
             <span className="drill-time">{now < start ? Math.ceil((start - now) / beat) : `Bar ${Math.min(bar + 1, step.bars)}/${step.bars}`}</span>
             <span className="drill-count">
-              <b key={jam.points}>{jam.points}</b> ×{jamMultiplier(jam.combo)}
+              <b key={jam.points}>{jam.points}</b>
             </span>
+            <span className="drill-mult">×{jamMultiplier(jam.combo)}</span>
           </div>
         )}
       </div>
